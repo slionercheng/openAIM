@@ -1,0 +1,24 @@
+app:
+  env: production
+  port: "8080"
+
+database:
+  host: ${DB_HOST}
+  port: ${DB_PORT}
+  user: ${DB_USER}
+  password: ${DB_PASSWORD}
+  dbname: ${DB_NAME}
+  sslmode: disable
+
+redis:
+  addr: ${REDIS_ADDR}
+  password: ${REDIS_PASSWORD}
+  db: 0
+
+jwt:
+  secret: ${JWT_SECRET}
+  expire: 2h
+  refresh_expire: 168h
+
+log:
+  level: info
