@@ -54,7 +54,19 @@ struct Constants {
         static func approve(_ id: String) -> String { "/join-requests/\(id)/approve" }
         static func reject(_ id: String) -> String { "/join-requests/\(id)/reject" }
     }
-    
+
+    struct Friends {
+        static let base = "/friends"
+        static let search = "/users/search"
+        static let requests = "/friends/requests"
+        static let requestsCount = "/friends/requests/count"
+        static let sendRequest = "/friends/request"
+
+        static func acceptRequest(_ id: String) -> String { "/friends/requests/\(id)/accept" }
+        static func rejectRequest(_ id: String) -> String { "/friends/requests/\(id)/reject" }
+        static func delete(_ id: String) -> String { "/friends/\(id)" }
+    }
+
     // MARK: - Storage Keys
     struct StorageKeys {
         static let accessToken = "openaim_access_token"

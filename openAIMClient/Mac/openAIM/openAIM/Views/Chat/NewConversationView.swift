@@ -67,37 +67,40 @@ struct NewConversationView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Select Participants")
                         .font(.system(size: 14, weight: .medium))
-                    
-                    ScrollView {
-                        VStack(spacing: 8) {
-                            ForEach(mockParticipants, id: \.self) { participant in
-                                HStack {
-                                    Circle()
-                                        .fill(Color.blue)
-                                        .frame(width: 32, height: 32)
-                                    
-                                    Text(participant)
-                                        .font(.system(size: 14))
-                                    
-                                    Spacer()
-                                    
-                                    Image(systemName: selectedParticipants.contains(participant) ? "checkmark.circle.fill" : "circle")
-                                        .foregroundStyle(selectedParticipants.contains(participant) ? .blue : .secondary)
-                                }
-                                .padding(8)
-                                .background(Color.gray.opacity(0.1))
-                                .cornerRadius(8)
-                                .onTapGesture {
-                                    if selectedParticipants.contains(participant) {
-                                        selectedParticipants.remove(participant)
-                                    } else {
-                                        selectedParticipants.insert(participant)
+
+                    if availableParticipants.isEmpty {
+                        VStack(spacing: 12) {
+                            Image(systemName: "person.2")
+                                .font(.system(size: 32))
+                                .foregroundStyle(.secondary)
+
+                            Text("No friends available")
+                                .font(.system(size: 14))
+                                .foregroundStyle(.secondary)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 150)
+                        .background(Color.gray.opacity(0.05))
+                        .cornerRadius(8)
+                    } else {
+                        ScrollView {
+                            VStack(spacing: 8) {
+                                ForEach(availableParticipants) { user in
+                                    ParticipantSelectionRow(
+                                        user: user,
+                                        isSelected: selectedParticipants.contains(user.id)
+                                    ) {
+                                        if selectedParticipants.contains(user.id) {
+                                            selectedParticipants.remove(user.id)
+                                        } else {
+                                            selectedParticipants.insert(user.id)
+                                        }
                                     }
                                 }
                             }
                         }
+                        .frame(maxHeight: 200)
                     }
-                    .frame(maxHeight: 200)
                 }
             }
             
@@ -127,9 +130,68 @@ struct NewConversationView: View {
         .padding(24)
         .frame(width: 400, height: 500)
     }
-    
-    private var mockParticipants: [String] {
-        ["AI Assistant", "John Doe", "Alice Smith", "Bob Johnson"]
+
+    private var availableParticipants: [User] {
+        appViewModel.friendshipViewModel.friends.compactMap { $0.user }
+    }
+}
+
+// MARK: - Participant Selection Row
+
+struct ParticipantSelectionRow: View {
+    let user: User
+    let isSelected: Bool
+    let onTap: () -> Void
+
+    var body: some View {
+        Button {
+            onTap()
+        } label: {
+            HStack(spacing: 12) {
+                Circle()
+                    .fill(avatarColor)
+                    .frame(width: 32, height: 32)
+                    .overlay {
+                        Text(avatarInitial)
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(.white)
+                    }
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(user.name ?? user.email)
+                        .font(.system(size: 14, weight: .medium))
+                        .lineLimit(1)
+
+                    Text(user.email)
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+
+                Spacer()
+
+                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                    .font(.system(size: 20))
+                    .foregroundStyle(isSelected ? .blue : .secondary)
+            }
+            .padding(8)
+            .background(isSelected ? Color.blue.opacity(0.1) : Color.clear)
+            .cornerRadius(8)
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var avatarColor: Color {
+        let colors: [Color] = [.blue, .purple, .green, .orange, .pink, .cyan]
+        let hash = (user.name ?? user.id).hashValue
+        return colors[abs(hash) % colors.count]
+    }
+
+    private var avatarInitial: String {
+        if let name = user.name, !name.isEmpty {
+            return String(name.prefix(1)).uppercased()
+        }
+        return String(user.email.prefix(1)).uppercased()
     }
 }
 

@@ -15,6 +15,7 @@ class AppViewModel {
     var conversationViewModel = ConversationViewModel()
     var agentViewModel = AgentViewModel()
     var organizationViewModel = OrganizationViewModel()
+    var friendshipViewModel = FriendshipViewModel()
     
     var currentView: AppView = .login
     
@@ -40,10 +41,12 @@ class AppViewModel {
         async let conversations = conversationViewModel.loadConversations()
         async let agents = agentViewModel.loadAgents()
         async let organizations = organizationViewModel.loadOrganizations()
-        
+        async let friends = friendshipViewModel.refreshAll()
+
         _ = await conversations
         _ = await agents
         _ = await organizations
+        _ = await friends
     }
     
     func logout() async {
