@@ -4,9 +4,9 @@ import (
 	"context"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/your-org/openim/internal/domain/organization"
 	"github.com/your-org/openim/internal/domain/user"
+	"github.com/your-org/openim/pkg/idgen"
 	"github.com/your-org/openim/pkg/jwt"
 	"gorm.io/gorm"
 )
@@ -48,7 +48,7 @@ func (s *AuthService) RegisterWithDefaultOrg(ctx context.Context, u *user.User) 
 
 	// 创建个人组织
 	defaultOrg := &organization.Organization{
-		ID:      "org_" + uuid.New().String()[:8],
+		ID:      idgen.Generate(idgen.TypeOrg),
 		Name:    u.Name + "的个人空间",
 		Type:    "personal",
 		OwnerID: u.ID,

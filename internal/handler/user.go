@@ -50,7 +50,7 @@ func (h *UserHandler) GetCurrentUser(c *gin.Context) {
 
 // UpdateUser 更新用户信息
 func (h *UserHandler) UpdateUser(c *gin.Context) {
-	claims, _ := c.Get("claims").(*jwt.Claims)
+	claims := c.MustGet("claims").(*jwt.Claims)
 
 	var req struct {
 		Name   string `json:"name"`
@@ -89,7 +89,7 @@ func (h *UserHandler) UpdateUser(c *gin.Context) {
 
 // GetUserOrganizations 获取用户所属组织
 func (h *UserHandler) GetUserOrganizations(c *gin.Context) {
-	claims, _ := c.Get("claims").(*jwt.Claims)
+	claims := c.MustGet("claims").(*jwt.Claims)
 
 	orgs, err := h.orgRepo.GetUserOrganizations(c.Request.Context(), claims.UserID)
 	if err != nil {
@@ -112,7 +112,7 @@ func (h *UserHandler) GetUserOrganizations(c *gin.Context) {
 
 // GetUserAgents 获取用户的Agent列表
 func (h *UserHandler) GetUserAgents(c *gin.Context) {
-	claims, _ := c.Get("claims").(*jwt.Claims)
+	claims := c.MustGet("claims").(*jwt.Claims)
 
 	var agents []struct {
 		ID          string `json:"id"`

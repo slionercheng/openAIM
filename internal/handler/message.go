@@ -4,9 +4,9 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 	"github.com/your-org/openim/internal/domain/conversation"
 	"github.com/your-org/openim/internal/domain/message"
+	"github.com/your-org/openim/pkg/idgen"
 	"github.com/your-org/openim/pkg/jwt"
 	"github.com/your-org/openim/pkg/response"
 	"github.com/redis/go-redis/v9"
@@ -37,7 +37,7 @@ type SendMessageRequest struct {
 // List 获取消息历史
 func (h *MessageHandler) List(c *gin.Context) {
 	convID := c.Param("id")
-	claims, _ := c.Get("claims").(*jwt.Claims)
+	claims := c.MustGet("claims").(*jwt.Claims)
 
 	// 验证用户是否是参与者
 	isParticipant, err := h.convRepo.IsParticipant(c.Request.Context(), convID, "user", claims.UserID)
@@ -102,7 +102,7 @@ func (h *MessageHandler) List(c *gin.Context) {
 // Send 发送消息
 func (h *MessageHandler) Send(c *gin.Context) {
 	convID := c.Param("id")
-	claims, _ := c.Get("claims").(*jwt.Claims)
+	claims := c.MustGet("claims").(*jwt.Claims)
 
 	var req SendMessageRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -123,7 +123,7 @@ func (h *MessageHandler) Send(c *gin.Context) {
 	}
 
 	msg := &message.Message{
-		ID:             "msg_" + uuid.New().String()[:8],
+		ID:             idgen.Generate(idgen.TypeMessage),
 		ConversationID: convID,
 		SenderType:     "user",
 		SenderID:       claims.UserID,

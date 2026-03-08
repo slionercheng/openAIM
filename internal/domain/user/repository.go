@@ -12,6 +12,7 @@ type Repository interface {
 	GetByEmail(ctx context.Context, email string) (*User, error)
 	Update(ctx context.Context, user *User) error
 	Delete(ctx context.Context, id string) error
+	Search(ctx context.Context, keyword string, page, pageSize int) ([]User, int64, error)
 }
 
 type repository struct {
@@ -50,4 +51,24 @@ func (r *repository) Update(ctx context.Context, user *User) error {
 
 func (r *repository) Delete(ctx context.Context, id string) error {
 	return r.db.WithContext(ctx).Delete(&User{}, "id = ?", id).Error
+}
+
+// Search 搜索用户（按邮箱或名称）
+func (r *repository) Search(ctx context.Context, keyword string, page, pageSize int) ([]User, int64, error) {
+	var users []User
+	var total int64
+
+	query := r.db.WithContext(ctx).Model(&User{}).
+		Where("email LIKE ? OR name LIKE ?", "%"+keyword+"%", "%"+keyword+"%")
+
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	offset := (page - 1) * pageSize
+	if err := query.Order("created_at DESC").Offset(offset).Limit(pageSize).Find(&users).Error; err != nil {
+		return nil, 0, err
+	}
+
+	return users, total, nil
 }

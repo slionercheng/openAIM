@@ -6,9 +6,9 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 	"github.com/your-org/openim/internal/domain/agent"
 	"github.com/your-org/openim/internal/domain/organization"
+	"github.com/your-org/openim/pkg/idgen"
 	"github.com/your-org/openim/pkg/jwt"
 	"github.com/your-org/openim/pkg/response"
 	"gorm.io/gorm"
@@ -55,7 +55,7 @@ func (h *AgentHandler) Create(c *gin.Context) {
 		return
 	}
 
-	claims, _ := c.Get("claims").(*jwt.Claims)
+	claims := c.MustGet("claims").(*jwt.Claims)
 
 	// 生成访问令牌
 	accessToken, err := generateAccessToken()
@@ -78,7 +78,7 @@ func (h *AgentHandler) Create(c *gin.Context) {
 	}
 
 	ag := &agent.Agent{
-		ID:          "agt_" + uuid.New().String()[:8],
+		ID:          idgen.Generate(idgen.TypeAgent),
 		Name:        req.Name,
 		Description: req.Description,
 		Avatar:      req.Avatar,
@@ -133,7 +133,7 @@ func (h *AgentHandler) GetByID(c *gin.Context) {
 // Update 更新 Agent 信息
 func (h *AgentHandler) Update(c *gin.Context) {
 	agentID := c.Param("id")
-	claims, _ := c.Get("claims").(*jwt.Claims)
+	claims := c.MustGet("claims").(*jwt.Claims)
 
 	ag, err := h.agentRepo.GetByID(c.Request.Context(), agentID)
 	if err != nil {
@@ -185,7 +185,7 @@ func (h *AgentHandler) Update(c *gin.Context) {
 // Delete 删除 Agent
 func (h *AgentHandler) Delete(c *gin.Context) {
 	agentID := c.Param("id")
-	claims, _ := c.Get("claims").(*jwt.Claims)
+	claims := c.MustGet("claims").(*jwt.Claims)
 
 	ag, err := h.agentRepo.GetByID(c.Request.Context(), agentID)
 	if err != nil {
@@ -246,7 +246,7 @@ func (h *AgentHandler) CreateJoinRequest(c *gin.Context) {
 	}
 
 	joinRequest := &agent.JoinRequest{
-		ID:      "jrq_" + uuid.New().String()[:8],
+		ID:      idgen.Generate(idgen.TypeJoinReq),
 		AgentID: agentID,
 		OrgID:   req.OrgID,
 		Status:  "pending",
@@ -299,7 +299,7 @@ func (h *AgentHandler) GetJoinRequests(c *gin.Context) {
 // RegenerateToken 重新生成访问令牌
 func (h *AgentHandler) RegenerateToken(c *gin.Context) {
 	agentID := c.Param("id")
-	claims, _ := c.Get("claims").(*jwt.Claims)
+	claims := c.MustGet("claims").(*jwt.Claims)
 
 	ag, err := h.agentRepo.GetByID(c.Request.Context(), agentID)
 	if err != nil {

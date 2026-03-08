@@ -5,6 +5,8 @@ import (
 
 	"github.com/your-org/openim/internal/domain/agent"
 	"github.com/your-org/openim/internal/domain/conversation"
+	"github.com/your-org/openim/internal/domain/event"
+	"github.com/your-org/openim/internal/domain/friendship"
 	"github.com/your-org/openim/internal/domain/message"
 	"github.com/your-org/openim/internal/domain/organization"
 	"github.com/your-org/openim/internal/domain/user"
@@ -48,5 +50,7 @@ func Migrate(db *gorm.DB) error {
 		&conversation.Conversation{},
 		&conversation.Participant{},
 		&message.Message{},
+		&friendship.Friendship{},
+		&event.Event{},
 	)
 }

@@ -4,9 +4,9 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 	"github.com/your-org/openim/internal/domain/user"
 	"github.com/your-org/openim/internal/service"
+	"github.com/your-org/openim/pkg/idgen"
 	"github.com/your-org/openim/pkg/jwt"
 	"github.com/your-org/openim/pkg/response"
 	"golang.org/x/crypto/bcrypt"
@@ -74,7 +74,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 
 	// 创建用户
 	newUser := &user.User{
-		ID:       "usr_" + uuid.New().String()[:8],
+		ID:       idgen.Generate(idgen.TypeUser),
 		Email:    req.Email,
 		Password: string(hashedPassword),
 		Name:     req.Name,

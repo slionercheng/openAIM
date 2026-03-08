@@ -1,12 +1,11 @@
 package handler
 
 import (
-	"net/http"
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 	"github.com/your-org/openim/internal/domain/organization"
+	"github.com/your-org/openim/pkg/idgen"
 	"github.com/your-org/openim/pkg/jwt"
 	"github.com/your-org/openim/pkg/response"
 	"gorm.io/gorm"
@@ -43,10 +42,10 @@ func (h *OrganizationHandler) Create(c *gin.Context) {
 		return
 	}
 
-	claims, _ := c.Get("claims").(*jwt.Claims)
+	claims := c.MustGet("claims").(*jwt.Claims)
 
 	org := &organization.Organization{
-		ID:          "org_" + uuid.New().String()[:8],
+		ID:          idgen.Generate(idgen.TypeOrg),
 		Name:        req.Name,
 		Type:        req.Type,
 		Description: req.Description,
@@ -91,7 +90,7 @@ func (h *OrganizationHandler) Create(c *gin.Context) {
 // GetByID 获取组织详情
 func (h *OrganizationHandler) GetByID(c *gin.Context) {
 	orgID := c.Param("id")
-	claims, _ := c.Get("claims").(*jwt.Claims)
+	claims := c.MustGet("claims").(*jwt.Claims)
 
 	// 验证用户是否在组织中
 	isMember, err := h.orgRepo.IsMember(c.Request.Context(), orgID, claims.UserID)
@@ -119,7 +118,7 @@ func (h *OrganizationHandler) GetByID(c *gin.Context) {
 // Update 更新组织信息
 func (h *OrganizationHandler) Update(c *gin.Context) {
 	orgID := c.Param("id")
-	claims, _ := c.Get("claims").(*jwt.Claims)
+	claims := c.MustGet("claims").(*jwt.Claims)
 
 	// 验证是否为管理员
 	role, err := h.orgRepo.GetMemberRole(c.Request.Context(), orgID, claims.UserID)
@@ -166,7 +165,7 @@ func (h *OrganizationHandler) Update(c *gin.Context) {
 // Delete 解散组织
 func (h *OrganizationHandler) Delete(c *gin.Context) {
 	orgID := c.Param("id")
-	claims, _ := c.Get("claims").(*jwt.Claims)
+	claims := c.MustGet("claims").(*jwt.Claims)
 
 	// 验证是否为 owner
 	role, err := h.orgRepo.GetMemberRole(c.Request.Context(), orgID, claims.UserID)
@@ -198,7 +197,7 @@ func (h *OrganizationHandler) Delete(c *gin.Context) {
 // GetMembers 获取组织成员
 func (h *OrganizationHandler) GetMembers(c *gin.Context) {
 	orgID := c.Param("id")
-	claims, _ := c.Get("claims").(*jwt.Claims)
+	claims := c.MustGet("claims").(*jwt.Claims)
 
 	// 验证用户是否在组织中
 	isMember, err := h.orgRepo.IsMember(c.Request.Context(), orgID, claims.UserID)
@@ -254,7 +253,7 @@ func (h *OrganizationHandler) GetMembers(c *gin.Context) {
 // InviteMember 邀请成员
 func (h *OrganizationHandler) InviteMember(c *gin.Context) {
 	orgID := c.Param("id")
-	claims, _ := c.Get("claims").(*jwt.Claims)
+	claims := c.MustGet("claims").(*jwt.Claims)
 
 	// 验证是否为管理员
 	role, err := h.orgRepo.GetMemberRole(c.Request.Context(), orgID, claims.UserID)
@@ -270,7 +269,7 @@ func (h *OrganizationHandler) InviteMember(c *gin.Context) {
 	}
 
 	invitation := &organization.Invitation{
-		ID:        "inv_" + uuid.New().String()[:8],
+		ID:        idgen.Generate(idgen.TypeInvitation),
 		OrgID:     orgID,
 		Email:     req.Email,
 		Role:      req.Role,
@@ -296,7 +295,7 @@ func (h *OrganizationHandler) InviteMember(c *gin.Context) {
 // GetAgents 获取组织内的Agent
 func (h *OrganizationHandler) GetAgents(c *gin.Context) {
 	orgID := c.Param("id")
-	claims, _ := c.Get("claims").(*jwt.Claims)
+	claims := c.MustGet("claims").(*jwt.Claims)
 
 	// 验证用户是否在组织中
 	isMember, err := h.orgRepo.IsMember(c.Request.Context(), orgID, claims.UserID)
@@ -332,7 +331,7 @@ func (h *OrganizationHandler) GetAgents(c *gin.Context) {
 func (h *OrganizationHandler) UpdateMemberRole(c *gin.Context) {
 	orgID := c.Param("id")
 	userID := c.Param("user_id")
-	claims, _ := c.Get("claims").(*jwt.Claims)
+	claims := c.MustGet("claims").(*jwt.Claims)
 
 	// 验证是否为 owner
 	role, err := h.orgRepo.GetMemberRole(c.Request.Context(), orgID, claims.UserID)
@@ -362,7 +361,7 @@ func (h *OrganizationHandler) UpdateMemberRole(c *gin.Context) {
 func (h *OrganizationHandler) RemoveMember(c *gin.Context) {
 	orgID := c.Param("id")
 	userID := c.Param("user_id")
-	claims, _ := c.Get("claims").(*jwt.Claims)
+	claims := c.MustGet("claims").(*jwt.Claims)
 
 	// 验证是否为管理员
 	role, err := h.orgRepo.GetMemberRole(c.Request.Context(), orgID, claims.UserID)

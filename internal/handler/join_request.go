@@ -1,7 +1,6 @@
 package handler
 
 import (
-	"net/http"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -28,7 +27,7 @@ func NewJoinRequestHandler(db *gorm.DB) *JoinRequestHandler {
 
 // List 获取待审批的申请列表
 func (h *JoinRequestHandler) List(c *gin.Context) {
-	claims, _ := c.Get("claims").(*jwt.Claims)
+	claims := c.MustGet("claims").(*jwt.Claims)
 	orgID := c.Query("org_id")
 
 	var requests []agent.JoinRequest
@@ -82,7 +81,7 @@ func (h *JoinRequestHandler) List(c *gin.Context) {
 // Approve 批准申请
 func (h *JoinRequestHandler) Approve(c *gin.Context) {
 	requestID := c.Param("id")
-	claims, _ := c.Get("claims").(*jwt.Claims)
+	claims := c.MustGet("claims").(*jwt.Claims)
 
 	request, err := h.agentRepo.GetJoinRequestByID(c.Request.Context(), requestID)
 	if err != nil {
@@ -149,7 +148,7 @@ func (h *JoinRequestHandler) Approve(c *gin.Context) {
 // Reject 拒绝申请
 func (h *JoinRequestHandler) Reject(c *gin.Context) {
 	requestID := c.Param("id")
-	claims, _ := c.Get("claims").(*jwt.Claims)
+	claims := c.MustGet("claims").(*jwt.Claims)
 
 	var req struct {
 		Reason string `json:"reason"`

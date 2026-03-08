@@ -4,10 +4,10 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 	"github.com/your-org/openim/internal/domain/agent"
 	"github.com/your-org/openim/internal/domain/conversation"
 	"github.com/your-org/openim/internal/domain/organization"
+	"github.com/your-org/openim/pkg/idgen"
 	"github.com/your-org/openim/pkg/jwt"
 	"github.com/your-org/openim/pkg/response"
 	"gorm.io/gorm"
@@ -47,7 +47,7 @@ func (h *ConversationHandler) Create(c *gin.Context) {
 		return
 	}
 
-	claims, _ := c.Get("claims").(*jwt.Claims)
+	claims := c.MustGet("claims").(*jwt.Claims)
 
 	// 验证用户是否在组织中
 	isMember, err := h.orgRepo.IsMember(c.Request.Context(), req.OrgID, claims.UserID)
@@ -76,7 +76,7 @@ func (h *ConversationHandler) Create(c *gin.Context) {
 	tx := h.db.Begin()
 
 	conv := &conversation.Conversation{
-		ID:        "conv_" + uuid.New().String()[:8],
+		ID:        idgen.Generate(idgen.TypeConv),
 		OrgID:     req.OrgID,
 		Type:      req.Type,
 		Name:      req.Name,
@@ -174,7 +174,7 @@ func (h *ConversationHandler) Create(c *gin.Context) {
 
 // List 获取会话列表
 func (h *ConversationHandler) List(c *gin.Context) {
-	claims, _ := c.Get("claims").(*jwt.Claims)
+	claims := c.MustGet("claims").(*jwt.Claims)
 
 	convs, err := h.convRepo.GetUserConversations(c.Request.Context(), claims.UserID)
 	if err != nil {
@@ -200,7 +200,7 @@ func (h *ConversationHandler) List(c *gin.Context) {
 // GetByID 获取会话详情
 func (h *ConversationHandler) GetByID(c *gin.Context) {
 	convID := c.Param("id")
-	claims, _ := c.Get("claims").(*jwt.Claims)
+	claims := c.MustGet("claims").(*jwt.Claims)
 
 	conv, err := h.convRepo.GetByID(c.Request.Context(), convID)
 	if err != nil {
@@ -296,7 +296,7 @@ func (h *ConversationHandler) Update(c *gin.Context) {
 // Delete 删除/退出会话
 func (h *ConversationHandler) Delete(c *gin.Context) {
 	convID := c.Param("id")
-	claims, _ := c.Get("claims").(*jwt.Claims)
+	claims := c.MustGet("claims").(*jwt.Claims)
 
 	// 验证用户是否是参与者
 	isParticipant, err := h.convRepo.IsParticipant(c.Request.Context(), convID, "user", claims.UserID)
@@ -317,7 +317,7 @@ func (h *ConversationHandler) Delete(c *gin.Context) {
 // AddParticipant 添加参与者
 func (h *ConversationHandler) AddParticipant(c *gin.Context) {
 	convID := c.Param("id")
-	claims, _ := c.Get("claims").(*jwt.Claims)
+	claims := c.MustGet("claims").(*jwt.Claims)
 
 	var req struct {
 		Type string `json:"type" binding:"required,oneof=user agent"`
@@ -386,7 +386,7 @@ func (h *ConversationHandler) RemoveParticipant(c *gin.Context) {
 		participantType = "user"
 	}
 
-	claims, _ := c.Get("claims").(*jwt.Claims)
+	claims := c.MustGet("claims").(*jwt.Claims)
 
 	// 验证用户是否是参与者
 	isParticipant, err := h.convRepo.IsParticipant(c.Request.Context(), convID, "user", claims.UserID)

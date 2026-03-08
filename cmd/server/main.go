@@ -70,12 +70,26 @@ func main() {
 		{
 			// 用户路由
 			userHandler := handler.NewUserHandler(db)
+			friendshipHandler := handler.NewFriendshipHandler(db)
 			users := protected.Group("/users")
 			{
 				users.GET("/me", userHandler.GetCurrentUser)
 				users.PUT("/me", userHandler.UpdateUser)
 				users.GET("/me/orgs", userHandler.GetUserOrganizations)
 				users.GET("/me/agents", userHandler.GetUserAgents)
+				users.GET("/search", friendshipHandler.SearchUsers)
+			}
+
+			// 好友路由
+			friends := protected.Group("/friends")
+			{
+				friends.GET("", friendshipHandler.GetFriends)
+				friends.GET("/requests", friendshipHandler.GetFriendRequests)
+				friends.GET("/requests/count", friendshipHandler.GetPendingRequestCount)
+				friends.POST("/request", friendshipHandler.SendFriendRequest)
+				friends.POST("/requests/:id/accept", friendshipHandler.AcceptFriendRequest)
+				friends.POST("/requests/:id/reject", friendshipHandler.RejectFriendRequest)
+				friends.DELETE("/:id", friendshipHandler.DeleteFriend)
 			}
 
 			// 组织路由
