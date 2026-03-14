@@ -13,23 +13,13 @@ struct Conversation: Codable, Identifiable, Hashable {
     let name: String?
     let type: ConversationType
     let organizationId: String?
-    let createdBy: String
+    let createdBy: String?
     let createdAt: Date
-    let updatedAt: Date
+    let updatedAt: Date?
+    var participants: [ConversationParticipant]?
     var lastMessage: Message?
-    var unreadCount: Int
-    
-    enum CodingKeys: String, CodingKey {
-        case id
-        case name
-        case type
-        case organizationId = "organization_id"
-        case createdBy = "created_by"
-        case createdAt = "created_at"
-        case updatedAt = "updated_at"
-        case lastMessage = "last_message"
-        case unreadCount = "unread_count"
-    }
+    var unreadCount: Int?
+    // 注意：不定义 CodingKeys，让 convertFromSnakeCase 自动处理
 }
 
 /// 会话类型
@@ -38,21 +28,21 @@ enum ConversationType: String, Codable {
     case group = "group"
 }
 
-/// 会话参与者
+/// 会话参与者（API响应格式）
+struct ConversationParticipant: Codable, Identifiable, Hashable {
+    let id: String
+    let type: String
+    let name: String?
+    let avatar: String?
+}
+
+/// 会话参与者（数据库格式）
 struct Participant: Codable, Identifiable, Hashable {
     let id: String
     let conversationId: String
     let participantType: ParticipantType
     let participantId: String
     let joinedAt: Date
-    
-    enum CodingKeys: String, CodingKey {
-        case id
-        case conversationId = "conversation_id"
-        case participantType = "participant_type"
-        case participantId = "participant_id"
-        case joinedAt = "joined_at"
-    }
 }
 
 /// 参与者类型
@@ -65,8 +55,14 @@ enum ParticipantType: String, Codable {
 struct CreateConversationRequest: Codable {
     let name: String?
     let type: ConversationType
-    let organizationId: String?
-    let participantIds: [String]
+    let orgId: String?
+    let participantIds: [ParticipantIdItem]
+}
+
+/// 参与者ID项
+struct ParticipantIdItem: Codable {
+    let type: String
+    let id: String
 }
 
 /// 添加参与者请求

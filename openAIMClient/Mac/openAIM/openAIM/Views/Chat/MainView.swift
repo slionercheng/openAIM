@@ -9,13 +9,13 @@ import SwiftUI
 
 struct MainView: View {
     @Environment(AppViewModel.self) private var appViewModel
-    
+
     var body: some View {
         HStack(spacing: 0) {
             // 侧边栏
             SidebarView()
                 .frame(width: 280)
-            
+
             // 聊天区域
             if let conversation = appViewModel.conversationViewModel.selectedConversation {
                 ChatView(conversation: conversation)
@@ -40,47 +40,49 @@ struct SidebarView: View {
             // 标题
             HStack {
                 Text("Messages")
-                    .font(.system(size: 18, weight: .semibold))
-                
+                    .font(.system(size: 20, weight: .semibold))
+                    .foregroundStyle(Color(red: 0.118, green: 0.161, blue: 0.231))
+
                 Spacer()
-                
+
                 Button {
                     showNewChat = true
                 } label: {
-                    Image(systemName: "square.and.pencil")
-                        .font(.system(size: 14))
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(Color(red: 0.945, green: 0.961, blue: 0.969))
+                            .frame(width: 32, height: 32)
+
+                        Image(systemName: "square.and.pencil")
+                            .font(.system(size: 14))
+                            .foregroundStyle(Color(red: 0.118, green: 0.161, blue: 0.231))
+                    }
                 }
                 .buttonStyle(.plain)
             }
             .padding(.horizontal, 16)
-            .padding(.vertical, 12)
+            .padding(.vertical, 16)
             .overlay(
                 Rectangle()
-                    .fill(Color.gray.opacity(0.2))
+                    .fill(Color(red: 0.886, green: 0.910, blue: 0.941))
                     .frame(height: 1),
                 alignment: .bottom
             )
             
             // 搜索框
-            HStack(spacing: 8) {
-                Image(systemName: "magnifyingglass")
-                    .font(.system(size: 14))
-                    .foregroundStyle(.secondary)
-                
-                TextField("Search conversations...", text: $searchText)
-                    .textFieldStyle(.plain)
-            }
-            .padding(10)
-            .background(Color.gray.opacity(0.1))
-            .cornerRadius(8)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 12)
+            SearchBar(text: $searchText)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 12)
             
             // 会话列表
             ScrollView {
                 LazyVStack(spacing: 4) {
                     ForEach(filteredConversations) { conversation in
-                        ConversationRowView(conversation: conversation)
+                        ConversationRowView(
+                            conversation: conversation,
+                            currentUserId: appViewModel.authViewModel.currentUser?.id,
+                            unreadCount: appViewModel.conversationViewModel.getUnreadCount(conversation.id)
+                        )
                             .background(
                                 appViewModel.conversationViewModel.selectedConversation?.id == conversation.id
                                     ? Color.blue.opacity(0.1)
@@ -100,7 +102,7 @@ struct SidebarView: View {
         .background(Color.white)
         .overlay(
             Rectangle()
-                .fill(Color.gray.opacity(0.2))
+                .fill(Color(red: 0.886, green: 0.910, blue: 0.941))
                 .frame(width: 1),
             alignment: .trailing
         )
@@ -110,13 +112,34 @@ struct SidebarView: View {
     }
     
     private var filteredConversations: [Conversation] {
-        if searchText.isEmpty {
-            return appViewModel.conversationViewModel.conversations
+        let allConversations = appViewModel.conversationViewModel.conversations
+        guard !searchText.isEmpty else { return allConversations }
+
+        let query = searchText.lowercased()
+        let currentUserId = appViewModel.authViewModel.currentUser?.id
+        return allConversations.filter { conv in
+            matchesSearch(conv, query: query, currentUserId: currentUserId)
         }
-        return appViewModel.conversationViewModel.conversations.filter {
-            ($0.name?.localizedCaseInsensitiveContains(searchText) ?? false) ||
-            ($0.lastMessage?.content.localizedCaseInsensitiveContains(searchText) ?? false)
+    }
+
+    private func matchesSearch(_ conversation: Conversation, query: String, currentUserId: String?) -> Bool {
+        // 搜索会话名称
+        if let name = conversation.name, name.lowercased().contains(query) {
+            return true
         }
+        // 搜索最后一条消息内容
+        if let content = conversation.lastMessage?.content, content.lowercased().contains(query) {
+            return true
+        }
+        // 搜索参与者名字（排除当前用户自己）
+        if let participants = conversation.participants {
+            for p in participants {
+                // 排除当前用户
+                if p.id == currentUserId { continue }
+                if let name = p.name, name.lowercased().contains(query) { return true }
+            }
+        }
+        return false
     }
 }
 
@@ -124,52 +147,86 @@ struct SidebarView: View {
 
 struct ConversationRowView: View {
     let conversation: Conversation
-    
+    let currentUserId: String?
+    let unreadCount: Int
+
     var body: some View {
         HStack(spacing: 12) {
             // 头像
-            Circle()
-                .fill(avatarColor)
-                .frame(width: 44, height: 44)
-                .overlay {
-                    Text(conversation.name?.prefix(2) ?? "AI")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(.white)
+            ZStack(alignment: .topTrailing) {
+                Circle()
+                    .fill(avatarColor)
+                    .frame(width: 44, height: 44)
+                    .overlay {
+                        Text(displayInitial)
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(.white)
+                    }
+
+                // 未读消息小红点
+                if unreadCount > 0 {
+                    Circle()
+                        .fill(Color.red)
+                        .frame(width: 18, height: 18)
+                        .overlay {
+                            Text(unreadCount > 99 ? "99+" : "\(unreadCount)")
+                                .font(.system(size: 10, weight: .bold))
+                                .foregroundStyle(.white)
+                        }
+                        .offset(x: 6, y: -6)
                 }
-            
+            }
+
             // 信息
             VStack(alignment: .leading, spacing: 4) {
-                Text(conversation.name ?? "Conversation")
-                    .font(.system(size: 15, weight: .medium))
+                Text(displayName)
+                    .font(.system(size: 15, weight: unreadCount > 0 ? .semibold : .medium))
+                    .foregroundStyle(Color(red: 0.118, green: 0.161, blue: 0.231))
                     .lineLimit(1)
-                
+
                 Text(conversation.lastMessage?.content ?? "No messages")
                     .font(.system(size: 13))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Color(red: 0.392, green: 0.455, blue: 0.549))
                     .lineLimit(1)
             }
-            
+
             Spacer()
-            
-            // 时间和未读数
-            VStack(alignment: .trailing, spacing: 4) {
-                Text(timeString)
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
-                
-                if conversation.unreadCount > 0 {
-                    Text("\(conversation.unreadCount)")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(Color.blue)
-                        .cornerRadius(100)
-                }
-            }
+
+            // 时间
+            Text(timeString)
+                .font(.system(size: 12))
+                .foregroundStyle(Color(red: 0.392, green: 0.455, blue: 0.549))
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
+        .background(
+            unreadCount > 0 ? Color.blue.opacity(0.05) : Color.clear
+        )
+        .cornerRadius(8)
+    }
+    
+    // 显示名称：优先使用参与者名字，其次使用会话名称
+    private var displayName: String {
+        // 如果是 direct 类型会话，显示对方的名字
+        if conversation.type == .direct, let participants = conversation.participants {
+            let otherParticipant = participants.first { $0.id != currentUserId }
+            if let name = otherParticipant?.name, !name.isEmpty {
+                return name
+            }
+        }
+        // 否则显示会话名称
+        return conversation.name ?? "Conversation"
+    }
+    
+    // 显示首字母
+    private var displayInitial: String {
+        if conversation.type == .direct, let participants = conversation.participants {
+            let otherParticipant = participants.first { $0.id != currentUserId }
+            if let name = otherParticipant?.name, !name.isEmpty {
+                return String(name.prefix(2))
+            }
+        }
+        return String(conversation.name?.prefix(2) ?? "AI")
     }
     
     private var avatarColor: Color {
@@ -180,7 +237,7 @@ struct ConversationRowView: View {
     }
     
     private var timeString: String {
-        let date = conversation.lastMessage?.createdAt ?? conversation.updatedAt
+        let date = conversation.lastMessage?.createdAt ?? conversation.updatedAt ?? conversation.createdAt
         
         let formatter = RelativeDateTimeFormatter()
         formatter.unitsStyle = .abbreviated
@@ -195,11 +252,11 @@ struct EmptyChatView: View {
         VStack(spacing: 16) {
             Image(systemName: "message.circle")
                 .font(.system(size: 64))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Color.gray)
             
             Text("Select a conversation to start chatting")
                 .font(.system(size: 16))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Color.gray)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.gray.opacity(0.05))
@@ -209,4 +266,34 @@ struct EmptyChatView: View {
 #Preview {
     MainView()
         .environment(AppViewModel())
+}
+
+// MARK: - Search Bar
+
+struct SearchBar: View {
+    @Binding var text: String
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 14))
+                .foregroundStyle(Color(red: 0.392, green: 0.455, blue: 0.549))
+
+            ZStack(alignment: .leading) {
+                if text.isEmpty {
+                    Text("Search conversations...")
+                        .font(.system(size: 14))
+                        .foregroundStyle(Color(red: 0.58, green: 0.64, blue: 0.72))
+                }
+
+                TextField("", text: $text)
+                    .textFieldStyle(.plain)
+                    .foregroundStyle(Color(red: 0.118, green: 0.161, blue: 0.231))
+                    .tint(Color.blue)
+            }
+        }
+        .padding(10)
+        .background(Color(red: 0.945, green: 0.961, blue: 0.969))
+        .cornerRadius(8)
+    }
 }

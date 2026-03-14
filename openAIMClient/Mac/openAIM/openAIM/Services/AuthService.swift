@@ -7,7 +7,8 @@
 
 import Foundation
 
-/// 认证服务
+/// 认证服务 - 支持 Multi-Instance
+/// 重要：会话状态存储在 SessionManager 中，每个实例独立
 actor AuthService {
     static let shared = AuthService()
 
@@ -23,15 +24,29 @@ actor AuthService {
         let request = LoginRequest(email: email, password: password)
         let response: APIResponse<AuthData> = try await apiClient.post(Constants.Auth.login, body: request)
 
-        // 保存认证信息
-        apiClient.setAccessToken(response.data.token.accessToken)
-        KeychainHelper.shared.set(response.data.token.refreshToken, forKey: Constants.StorageKeys.refreshToken)
+        let user = response.data.user
+        let token = response.data.token
+
+        // 在 SessionManager 中创建会话（内存中，实例独享）
+        await MainActor.run {
+            SessionManager.shared.createSession(
+                userId: user.id,
+                email: user.email,
+                name: user.name,
+                avatar: user.avatar,
+                accessToken: token.accessToken,
+                refreshToken: token.refreshToken
+            )
+        }
 
         // 保存用户信息
-        currentUser = response.data.user
-        saveUser(response.data.user)
+        currentUser = user
 
-        return response.data.user
+        await MainActor.run {
+            logInfo("AuthService", "User logged in: \(email)")
+        }
+
+        return user
     }
 
     /// 用户注册
@@ -39,53 +54,85 @@ actor AuthService {
         let request = RegisterRequest(email: email, password: password, name: name)
         let response: APIResponse<AuthData> = try await apiClient.post(Constants.Auth.register, body: request)
 
-        // 保存认证信息
-        apiClient.setAccessToken(response.data.token.accessToken)
-        KeychainHelper.shared.set(response.data.token.refreshToken, forKey: Constants.StorageKeys.refreshToken)
+        let user = response.data.user
+        let token = response.data.token
 
-        // 保存用户信息
-        currentUser = response.data.user
-        saveUser(response.data.user)
+        // 在 SessionManager 中创建会话
+        await MainActor.run {
+            SessionManager.shared.createSession(
+                userId: user.id,
+                email: user.email,
+                name: user.name,
+                avatar: user.avatar,
+                accessToken: token.accessToken,
+                refreshToken: token.refreshToken
+            )
+        }
 
-        return response.data.user
+        currentUser = user
+
+        await MainActor.run {
+            logInfo("AuthService", "User registered: \(email)")
+        }
+
+        return user
     }
 
     /// 用户登出
     func logout() async {
-        // 先尝试通知后端，但无论成功失败都清除本地数据
+        // 先尝试通知后端
         do {
             let _: APIResponse<Empty> = try await apiClient.post(Constants.Auth.logout, body: EmptyData())
         } catch {
-            // 忽略后端错误，继续清除本地数据
+            // 忽略后端错误
         }
 
-        // 清除本地数据
-        clearAuthData()
+        // 清除会话
+        await MainActor.run {
+            SessionManager.shared.clearSession()
+        }
+        currentUser = nil
+
+        await MainActor.run {
+            logInfo("AuthService", "User logged out")
+        }
     }
 
-    /// 清除本地认证数据（公开方法）
+    /// 清除本地认证数据（被踢下线时使用）
     func clearLocalAuthData() {
-        clearAuthData()
+        Task { @MainActor in
+            SessionManager.shared.clearSession()
+        }
+        currentUser = nil
     }
 
     /// 刷新 Token
     func refreshToken() async throws -> Bool {
-        guard let refreshToken = KeychainHelper.shared.get(forKey: Constants.StorageKeys.refreshToken) else {
+        guard let refreshToken = await SessionManager.shared.refreshToken else {
             return false
         }
 
         do {
             let response: APIResponse<AuthData> = try await apiClient.post(Constants.Auth.refresh, body: ["refresh_token": refreshToken])
 
-            apiClient.setAccessToken(response.data.token.accessToken)
-            KeychainHelper.shared.set(response.data.token.refreshToken, forKey: Constants.StorageKeys.refreshToken)
+            let user = response.data.user
+            let token = response.data.token
 
-            currentUser = response.data.user
-            saveUser(response.data.user)
+            // 更新 SessionManager 中的令牌
+            await MainActor.run {
+                SessionManager.shared.updateTokens(
+                    accessToken: token.accessToken,
+                    refreshToken: token.refreshToken
+                )
+            }
 
+            currentUser = user
             return true
         } catch {
-            clearAuthData()
+            // 刷新失败，清除会话
+            await MainActor.run {
+                SessionManager.shared.clearSession()
+            }
             return false
         }
     }
@@ -94,60 +141,54 @@ actor AuthService {
     func getCurrentUser() async throws -> User {
         let response: APIResponse<User> = try await apiClient.get(Constants.Users.me)
         currentUser = response.data
-        saveUser(response.data)
         return response.data
     }
 
-    /// 检查是否已登录
-    func isAuthenticated() -> Bool {
-        return KeychainHelper.shared.get(forKey: Constants.StorageKeys.accessToken) != nil
+    /// 检查是否已登录（检查 SessionManager）
+    func isAuthenticated() async -> Bool {
+        return await SessionManager.shared.isAuthenticated
     }
 
-    /// 尝试恢复登录状态
-    func restoreSession() async -> Bool {
-        guard let _ = KeychainHelper.shared.get(forKey: Constants.StorageKeys.accessToken) else {
-            return false
-        }
+    /// 从已保存的账号恢复会话
+    func restoreSession(from account: SavedAccount) async -> Bool {
+        // 在 SessionManager 中恢复会话
+        let success = await SessionManager.shared.restoreSession(from: account)
+        guard success else { return false }
 
-        // 尝试获取用户信息
+        // 验证 token 是否有效
         do {
             _ = try await getCurrentUser()
+            await MainActor.run {
+                logInfo("AuthService", "Session restored for: \(account.email)")
+            }
             return true
         } catch {
-            // Token 可能过期，尝试刷新
-            if let _ = KeychainHelper.shared.get(forKey: Constants.StorageKeys.refreshToken) {
-                do {
-                    return try await refreshToken()
-                } catch {
-                    return false
+            // Token 过期，尝试刷新
+            do {
+                _ = try await refreshToken()
+                await MainActor.run {
+                    logInfo("AuthService", "Session restored with refreshed token for: \(account.email)")
                 }
+                return true
+            } catch {
+                await MainActor.run {
+                    logWarn("AuthService", "Failed to restore session for: \(account.email)")
+                    SessionManager.shared.clearSession()
+                }
+                return false
             }
+        }
+    }
+
+    /// 尝试恢复登录状态（自动选择最近账号）
+    func restoreSession() async -> Bool {
+        // 检查是否有已保存的账号
+        let accounts = await AccountManager.shared.getSavedAccounts()
+        guard let recentAccount = accounts.first else {
             return false
         }
-    }
 
-    // MARK: - Private Methods
-
-    private func saveUser(_ user: User) {
-        if let data = try? JSONEncoder().encode(user) {
-            UserDefaults.standard.set(data, forKey: Constants.StorageKeys.currentUser)
-        }
-    }
-
-    private func loadUser() -> User? {
-        guard let data = UserDefaults.standard.data(forKey: Constants.StorageKeys.currentUser),
-              let user = try? JSONDecoder().decode(User.self, from: data) else {
-            return nil
-        }
-        return user
-    }
-
-    private func clearAuthData() {
-        apiClient.setAccessToken(nil)
-        KeychainHelper.shared.delete(forKey: Constants.StorageKeys.refreshToken)
-        KeychainHelper.shared.delete(forKey: Constants.StorageKeys.accessToken)
-        UserDefaults.standard.removeObject(forKey: Constants.StorageKeys.currentUser)
-        currentUser = nil
+        return await restoreSession(from: recentAccount)
     }
 }
 

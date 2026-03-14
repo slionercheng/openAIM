@@ -4,6 +4,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/your-org/openim/internal/domain/organization"
 	"github.com/your-org/openim/internal/domain/user"
+	"github.com/your-org/openim/internal/ws"
 	"github.com/your-org/openim/pkg/jwt"
 	"github.com/your-org/openim/pkg/response"
 	"gorm.io/gorm"
@@ -13,6 +14,7 @@ type UserHandler struct {
 	db       *gorm.DB
 	userRepo user.Repository
 	orgRepo  organization.Repository
+	hub      *ws.Hub
 }
 
 func NewUserHandler(db *gorm.DB) *UserHandler {
@@ -21,6 +23,11 @@ func NewUserHandler(db *gorm.DB) *UserHandler {
 		userRepo: user.NewRepository(db),
 		orgRepo:  organization.NewRepository(db),
 	}
+}
+
+// SetHub 设置 Hub（用于在线状态检查）
+func (h *UserHandler) SetHub(hub *ws.Hub) {
+	h.hub = hub
 }
 
 // GetCurrentUser 获取当前用户信息
@@ -130,4 +137,46 @@ func (h *UserHandler) GetUserAgents(c *gin.Context) {
 	}
 
 	response.Success(c, agents)
+}
+
+// GetUserOnlineStatus 获取用户在线状态
+// GET /api/v1/users/:id/online
+func (h *UserHandler) GetUserOnlineStatus(c *gin.Context) {
+	userID := c.Param("id")
+
+	online := false
+	if h.hub != nil {
+		online = h.hub.IsUserOnline(userID)
+	}
+
+	response.Success(c, gin.H{
+		"user_id": userID,
+		"online":  online,
+	})
+}
+
+// GetUsersOnlineStatus 批量获取用户在线状态
+// POST /api/v1/users/online-status
+func (h *UserHandler) GetUsersOnlineStatus(c *gin.Context) {
+	var req struct {
+		UserIDs []string `json:"user_ids" binding:"required"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, 400001, "参数错误")
+		return
+	}
+
+	statuses := make(map[string]bool)
+	if h.hub != nil {
+		for _, userID := range req.UserIDs {
+			statuses[userID] = h.hub.IsUserOnline(userID)
+		}
+	} else {
+		for _, userID := range req.UserIDs {
+			statuses[userID] = false
+		}
+	}
+
+	response.Success(c, statuses)
 }

@@ -28,13 +28,16 @@ actor ConversationService {
     }
     
     /// 创建会话
-    func createConversation(name: String?, type: ConversationType, organizationId: String?, participantIds: [String]) async throws -> Conversation {
+    func createConversation(name: String?, type: ConversationType, orgId: String? = nil, participantIds: [String]) async throws -> Conversation {
+        // 将字符串ID转换为参与者对象
+        let participants = participantIds.map { ParticipantIdItem(type: "user", id: $0) }
         let request = CreateConversationRequest(
             name: name,
             type: type,
-            organizationId: organizationId,
-            participantIds: participantIds
+            orgId: orgId,
+            participantIds: participants
         )
+        print("[DEBUG] Creating conversation with request: orgId=\(orgId ?? "nil"), type=\(type.rawValue), participants=\(participantIds)")
         let conversation: Conversation = try await apiClient.post(Constants.Conversations.base, body: request)
         return conversation
     }

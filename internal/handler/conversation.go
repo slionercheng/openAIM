@@ -30,7 +30,7 @@ func NewConversationHandler(db *gorm.DB) *ConversationHandler {
 }
 
 type CreateConversationRequest struct {
-	OrgID          string `json:"org_id" binding:"required"`
+	OrgID          string `json:"org_id"`
 	Type           string `json:"type" binding:"required,oneof=direct group"`
 	Name           string `json:"name"`
 	ParticipantIDs []struct {
@@ -49,26 +49,35 @@ func (h *ConversationHandler) Create(c *gin.Context) {
 
 	claims := c.MustGet("claims").(*jwt.Claims)
 
-	// 验证用户是否在组织中
-	isMember, err := h.orgRepo.IsMember(c.Request.Context(), req.OrgID, claims.UserID)
-	if err != nil || !isMember {
-		response.Forbidden(c, "无权在该组织创建会话")
+	// 群聊必须有组织ID
+	if req.Type == "group" && req.OrgID == "" {
+		response.BadRequest(c, 400001, "群聊必须指定组织")
 		return
 	}
 
-	// 验证所有参与者
-	for _, p := range req.ParticipantIDs {
-		if p.Type == "user" {
-			isParticipant, _ := h.orgRepo.IsMember(c.Request.Context(), req.OrgID, p.ID)
-			if !isParticipant {
-				response.BadRequest(c, 400002, "参与者 "+p.ID+" 不在该组织中")
-				return
-			}
-		} else if p.Type == "agent" {
-			isInOrg, _ := h.agentRepo.IsInOrg(c.Request.Context(), p.ID, req.OrgID)
-			if !isInOrg {
-				response.BadRequest(c, 400003, "Agent "+p.ID+" 不在该组织中")
-				return
+	// 私聊如果没有组织ID，跳过组织验证
+	if req.OrgID != "" {
+		// 验证用户是否在组织中
+		isMember, err := h.orgRepo.IsMember(c.Request.Context(), req.OrgID, claims.UserID)
+		if err != nil || !isMember {
+			response.Forbidden(c, "无权在该组织创建会话")
+			return
+		}
+
+		// 验证所有参与者
+		for _, p := range req.ParticipantIDs {
+			if p.Type == "user" {
+				isParticipant, _ := h.orgRepo.IsMember(c.Request.Context(), req.OrgID, p.ID)
+				if !isParticipant {
+					response.BadRequest(c, 400002, "参与者 "+p.ID+" 不在该组织中")
+					return
+				}
+			} else if p.Type == "agent" {
+				isInOrg, _ := h.agentRepo.IsInOrg(c.Request.Context(), p.ID, req.OrgID)
+				if !isInOrg {
+					response.BadRequest(c, 400003, "Agent "+p.ID+" 不在该组织中")
+					return
+				}
 			}
 		}
 	}
@@ -104,12 +113,12 @@ func (h *ConversationHandler) Create(c *gin.Context) {
 
 	// 添加其他参与者
 	participantMap := make(map[string]bool)
-	participantMap[claims.UserID] = true
+	participantMap["user_"+claims.UserID] = true // 创建者已添加，使用与循环相同的 key 格式
 
 	for _, p := range req.ParticipantIDs {
 		key := p.Type + "_" + p.ID
 		if participantMap[key] {
-			continue
+			continue // 跳过已添加的参与者（包括创建者自己）
 		}
 		participantMap[key] = true
 
@@ -163,12 +172,14 @@ func (h *ConversationHandler) Create(c *gin.Context) {
 	}
 
 	response.Success(c, gin.H{
-		"id":           conv.ID,
-		"type":         conv.Type,
-		"name":         conv.Name,
-		"org_id":       conv.OrgID,
-		"participants": participantDetails,
-		"created_at":   conv.CreatedAt,
+		"id":              conv.ID,
+		"type":            conv.Type,
+		"name":            conv.Name,
+		"organization_id": conv.OrgID,
+		"created_by":      conv.CreatedBy,
+		"participants":    participantDetails,
+		"created_at":      conv.CreatedAt,
+		"updated_at":      conv.UpdatedAt,
 	})
 }
 
@@ -184,13 +195,48 @@ func (h *ConversationHandler) List(c *gin.Context) {
 
 	result := make([]gin.H, len(convs))
 	for i, conv := range convs {
+		// 获取参与者
+		participants, _ := h.convRepo.GetParticipants(c.Request.Context(), conv.ID)
+		participantDetails := make([]gin.H, len(participants))
+
+		for j, p := range participants {
+			if p.ParticipantType == "user" {
+				var u struct {
+					ID     string `json:"id"`
+					Name   string `json:"name"`
+					Avatar string `json:"avatar"`
+				}
+				h.db.Table("users").Where("id = ?", p.ParticipantID).First(&u)
+				participantDetails[j] = gin.H{
+					"type":   "user",
+					"id":     u.ID,
+					"name":   u.Name,
+					"avatar": u.Avatar,
+				}
+			} else {
+				var a struct {
+					ID     string `json:"id"`
+					Name   string `json:"name"`
+					Avatar string `json:"avatar"`
+				}
+				h.db.Table("agents").Where("id = ?", p.ParticipantID).First(&a)
+				participantDetails[j] = gin.H{
+					"type":   "agent",
+					"id":     a.ID,
+					"name":   a.Name,
+					"avatar": a.Avatar,
+				}
+			}
+		}
+
 		result[i] = gin.H{
-			"id":         conv.ID,
-			"type":       conv.Type,
-			"name":       conv.Name,
-			"org_id":     conv.OrgID,
-			"created_at": conv.CreatedAt,
-			"updated_at": conv.UpdatedAt,
+			"id":           conv.ID,
+			"type":         conv.Type,
+			"name":         conv.Name,
+			"org_id":       conv.OrgID,
+			"created_at":   conv.CreatedAt,
+			"updated_at":   conv.UpdatedAt,
+			"participants": participantDetails,
 		}
 	}
 

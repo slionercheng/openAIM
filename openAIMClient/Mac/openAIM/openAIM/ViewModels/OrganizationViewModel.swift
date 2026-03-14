@@ -17,9 +17,17 @@ class OrganizationViewModel {
     var selectedOrganization: Organization?
     var isLoading = false
     var errorMessage: String?
-    
+
     private let service = OrganizationService.shared
-    
+
+    /// 清除所有数据（用于切换用户时）
+    func clearData() {
+        organizations = []
+        members = []
+        selectedOrganization = nil
+        errorMessage = nil
+    }
+
     /// 加载组织列表
     func loadOrganizations() async {
         isLoading = true

@@ -6,6 +6,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/your-org/openim/internal/domain/conversation"
 	"github.com/your-org/openim/internal/domain/message"
+	"github.com/your-org/openim/internal/ws"
 	"github.com/your-org/openim/pkg/idgen"
 	"github.com/your-org/openim/pkg/jwt"
 	"github.com/your-org/openim/pkg/response"
@@ -18,14 +19,16 @@ type MessageHandler struct {
 	msgRepo  message.Repository
 	convRepo conversation.Repository
 	rdb      *redis.Client
+	hub      *ws.Hub
 }
 
-func NewMessageHandler(db *gorm.DB, rdb *redis.Client) *MessageHandler {
+func NewMessageHandler(db *gorm.DB, rdb *redis.Client, hub *ws.Hub) *MessageHandler {
 	return &MessageHandler{
 		db:       db,
 		msgRepo:  message.NewRepository(db),
 		convRepo: conversation.NewRepository(db),
 		rdb:      rdb,
+		hub:      hub,
 	}
 }
 
@@ -139,15 +142,37 @@ func (h *MessageHandler) Send(c *gin.Context) {
 	// 更新会话更新时间
 	h.db.Exec("UPDATE conversations SET updated_at = ? WHERE id = ?", time.Now(), convID)
 
-	// TODO: 通过 WebSocket 推送给其他参与者
+	// 获取发送者信息
+	var senderName, senderAvatar string
+	h.db.Table("users").Where("id = ?", claims.UserID).
+		Select("name, avatar").Row().Scan(&senderName, &senderAvatar)
+
+	// 构造消息数据
+	messageData := gin.H{
+		"type":           "new_message",
+		"id":             msg.ID,
+		"conversation_id": msg.ConversationID,
+		"sender_type":    msg.SenderType,
+		"sender_id":      msg.SenderID,
+		"sender_name":    senderName,
+		"sender_avatar":  senderAvatar,
+		"content":        msg.Content,
+		"content_type":   msg.ContentType,
+		"created_at":     msg.CreatedAt,
+	}
+
+	// 通过 WebSocket 推送给其他参与者
+	if h.hub != nil {
+		h.hub.BroadcastToConversation(convID, messageData, claims.UserID)
+	}
 
 	response.Success(c, gin.H{
-		"id":            msg.ID,
+		"id":             msg.ID,
 		"conversation_id": msg.ConversationID,
-		"sender_type":   msg.SenderType,
-		"sender_id":     msg.SenderID,
-		"content":       msg.Content,
-		"content_type":  msg.ContentType,
-		"created_at":    msg.CreatedAt,
+		"sender_type":     msg.SenderType,
+		"sender_id":       msg.SenderID,
+		"content":         msg.Content,
+		"content_type":    msg.ContentType,
+		"created_at":      msg.CreatedAt,
 	})
 }

@@ -25,6 +25,9 @@ struct Constants {
         static let me = "/users/me"
         static let myOrgs = "/users/me/orgs"
         static let myAgents = "/users/me/agents"
+        static let onlineStatus = "/users/online-status"
+
+        static func userOnline(_ id: String) -> String { "/users/\(id)/online" }
     }
     
     struct Agents {

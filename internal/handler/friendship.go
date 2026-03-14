@@ -7,6 +7,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/your-org/openim/internal/domain/friendship"
 	"github.com/your-org/openim/internal/domain/user"
+	"github.com/your-org/openim/internal/ws"
 	"github.com/your-org/openim/pkg/idgen"
 	"github.com/your-org/openim/pkg/jwt"
 	"github.com/your-org/openim/pkg/response"
@@ -17,13 +18,15 @@ type FriendshipHandler struct {
 	db             *gorm.DB
 	friendshipRepo friendship.Repository
 	userRepo       user.Repository
+	hub            *ws.Hub
 }
 
-func NewFriendshipHandler(db *gorm.DB) *FriendshipHandler {
+func NewFriendshipHandler(db *gorm.DB, hub *ws.Hub) *FriendshipHandler {
 	return &FriendshipHandler{
 		db:             db,
 		friendshipRepo: friendship.NewRepository(db),
 		userRepo:       user.NewRepository(db),
+		hub:            hub,
 	}
 }
 
@@ -49,6 +52,7 @@ type SearchUserItem struct {
 	Name             string `json:"name"`
 	Avatar           string `json:"avatar,omitempty"`
 	Status           string `json:"status"`
+	Online           bool   `json:"online"`
 	FriendshipStatus string `json:"friendship_status"`
 }
 
@@ -80,8 +84,8 @@ func (h *FriendshipHandler) SearchUsers(c *gin.Context) {
 		keyword = req.Q
 	}
 
-	// 搜索用户
-	users, total, err := h.userRepo.Search(c.Request.Context(), keyword, req.Page, req.PageSize)
+	// 搜索用户，排除当前用户
+	users, total, err := h.userRepo.Search(c.Request.Context(), keyword, claims.UserID, req.Page, req.PageSize)
 	if err != nil {
 		response.InternalError(c, "搜索用户失败")
 		return
@@ -90,13 +94,14 @@ func (h *FriendshipHandler) SearchUsers(c *gin.Context) {
 	// 构建响应
 	items := make([]SearchUserItem, 0, len(users))
 	for _, u := range users {
-		// 排除自己
-		if u.ID == claims.UserID {
-			continue
-		}
-
 		// 获取好友关系状态
 		friendshipStatus, _ := h.friendshipRepo.GetFriendshipStatus(c.Request.Context(), claims.UserID, u.ID)
+
+		// 检查用户是否在线
+		online := false
+		if h.hub != nil {
+			online = h.hub.IsUserOnline(u.ID)
+		}
 
 		items = append(items, SearchUserItem{
 			ID:               u.ID,
@@ -104,6 +109,7 @@ func (h *FriendshipHandler) SearchUsers(c *gin.Context) {
 			Name:             u.Name,
 			Avatar:           u.Avatar,
 			Status:           u.Status,
+			Online:           online,
 			FriendshipStatus: friendshipStatus,
 		})
 	}
@@ -258,6 +264,12 @@ func (h *FriendshipHandler) GetFriends(c *gin.Context) {
 			continue
 		}
 
+		// 检查好友是否在线
+		online := false
+		if h.hub != nil {
+			online = h.hub.IsUserOnline(friendID)
+		}
+
 		items = append(items, gin.H{
 			"id":         f.ID,
 			"user": gin.H{
@@ -266,6 +278,7 @@ func (h *FriendshipHandler) GetFriends(c *gin.Context) {
 				"name":   friendUser.Name,
 				"avatar": friendUser.Avatar,
 				"status": friendUser.Status,
+				"online": online,
 			},
 			"created_at": f.CreatedAt,
 		})
@@ -363,10 +376,22 @@ func (h *FriendshipHandler) AcceptFriendRequest(c *gin.Context) {
 		return
 	}
 
+	// 获取好友用户信息
+	friendUser, _ := h.userRepo.GetByID(c.Request.Context(), f.RequesterID)
+
 	response.SuccessWithMessage(c, "已接受好友请求", gin.H{
-		"id":         f.ID,
-		"status":     f.Status,
-		"updated_at": f.UpdatedAt,
+		"id":           f.ID,
+		"requester_id": f.RequesterID,
+		"addressee_id": f.AddresseeID,
+		"status":       f.Status,
+		"created_at":   f.CreatedAt,
+		"updated_at":   f.UpdatedAt,
+		"user": gin.H{
+			"id":     friendUser.ID,
+			"email":  friendUser.Email,
+			"name":   friendUser.Name,
+			"avatar": friendUser.Avatar,
+		},
 	})
 }
 

@@ -16,9 +16,16 @@ class AgentViewModel {
     var selectedAgent: Agent?
     var isLoading = false
     var errorMessage: String?
-    
+
     private let service = AgentService.shared
-    
+
+    /// 清除所有数据（用于切换用户时）
+    func clearData() {
+        agents = []
+        selectedAgent = nil
+        errorMessage = nil
+    }
+
     /// 加载 Agent 列表
     func loadAgents() async {
         isLoading = true

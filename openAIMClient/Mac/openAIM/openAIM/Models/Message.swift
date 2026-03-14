@@ -17,17 +17,7 @@ struct Message: Codable, Identifiable, Hashable {
     let contentType: ContentType
     let metadata: [String: String]?
     let createdAt: Date
-    
-    enum CodingKeys: String, CodingKey {
-        case id
-        case conversationId = "conversation_id"
-        case senderType = "sender_type"
-        case senderId = "sender_id"
-        case content
-        case contentType = "content_type"
-        case metadata
-        case createdAt = "created_at"
-    }
+    // 注意：不定义 CodingKeys，让 convertFromSnakeCase 自动处理
 }
 
 /// 发送者类型
@@ -52,15 +42,9 @@ struct SendMessageRequest: Codable {
 
 /// 消息列表响应
 struct MessageListResponse: Codable {
-    let messages: [Message]
+    let list: [Message]
     let total: Int
     let page: Int
     let pageSize: Int
-    
-    enum CodingKeys: String, CodingKey {
-        case messages
-        case total
-        case page
-        case pageSize = "page_size"
-    }
+    // 注意：不定义 CodingKeys，让 convertFromSnakeCase 自动处理
 }

@@ -104,31 +104,56 @@ struct RootView: View {
     @Environment(AppViewModel.self) private var appViewModel
 
     var body: some View {
-        switch appViewModel.currentView {
-        case .login:
-            LoginView()
-        case .register:
-            RegisterView()
-        default:
-            // 已认证视图 - 带导航栏
-            HStack(spacing: 0) {
-                NavigationRail()
-                
-                switch appViewModel.currentView {
-                case .main:
-                    MainView()
-                case .contacts:
-                    ContactsView()
-                case .agents:
-                    AgentListView()
-                case .organizations:
-                    OrganizationView()
-                case .settings:
-                    SettingsView()
-                default:
-                    MainView()
+        Group {
+            switch appViewModel.currentView {
+            case .login:
+                LoginView()
+            case .register:
+                RegisterView()
+            default:
+                // 已认证视图 - 带导航栏
+                HStack(spacing: 0) {
+                    NavigationRail()
+
+                    switch appViewModel.currentView {
+                    case .main:
+                        MainView()
+                    case .contacts:
+                        ContactsView()
+                    case .agents:
+                        AgentListView()
+                    case .organizations:
+                        OrganizationView()
+                    case .settings:
+                        SettingsView()
+                    default:
+                        MainView()
+                    }
                 }
             }
+        }
+        .alert("账号已在其他设备登录", isPresented: Binding(
+            get: { appViewModel.showKickedAlert },
+            set: { appViewModel.showKickedAlert = $0 }
+        )) {
+            Button("确定", role: .cancel) {
+                appViewModel.showKickedAlert = false
+            }
+        } message: {
+            Text("您的账号已在其他设备登录，您已被强制下线。如非本人操作，请及时修改密码。")
+        }
+        .alert("该账号已在其他设备登录", isPresented: Binding(
+            get: { appViewModel.showAlreadyOnlineAlert },
+            set: { appViewModel.showAlreadyOnlineAlert = $0 }
+        )) {
+            Button("取消", role: .cancel) {
+                appViewModel.cancelForceLogin()
+            }
+            Button("确认上线", role: .destructive) {
+                appViewModel.confirmForceLogin()
+            }
+        } message: {
+            Text("如果继续登录，将顶替已在线的设备。确定要继续吗？")
         }
     }
 }

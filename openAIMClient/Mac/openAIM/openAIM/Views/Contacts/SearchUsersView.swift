@@ -150,85 +150,96 @@ struct SearchUserRowView: View {
     @Environment(AppViewModel.self) private var appViewModel
 
     var body: some View {
-        HStack(spacing: 12) {
-            // 头像
-            Circle()
-                .fill(avatarColor)
-                .frame(width: 44, height: 44)
-                .overlay {
-                    Text(avatarInitial)
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundStyle(.white)
+        Button {
+            appViewModel.friendshipViewModel.selectUser(user)
+        } label: {
+            HStack(spacing: 12) {
+                // 头像: 40x40, 圆形
+                ZStack(alignment: .bottomTrailing) {
+                    Circle()
+                        .fill(avatarColor)
+                        .frame(width: 40, height: 40)
+                        .overlay {
+                            Text(avatarInitial)
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundStyle(.white)
+                        }
+
+                    // 在线状态指示器
+                    if user.online == true {
+                        Circle()
+                            .fill(Color.white)
+                            .frame(width: 14, height: 14)
+                            .overlay {
+                                Circle()
+                                    .fill(Color.green)
+                                    .frame(width: 10, height: 10)
+                            }
+                            .offset(x: 2, y: 2)
+                    }
                 }
 
-            VStack(alignment: .leading, spacing: 4) {
-                Text(user.name ?? user.email)
-                    .font(.system(size: 15, weight: .medium))
-                    .lineLimit(1)
+                // 用户信息
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 6) {
+                        Text(user.name ?? user.email)
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundStyle(Color(red: 0.118, green: 0.161, blue: 0.231)) // #1E293B
+                            .lineLimit(1)
 
-                Text(user.email)
-                    .font(.system(size: 13))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
+                        // 在线状态标签
+                        if user.online == true {
+                            Text("Online")
+                                .font(.system(size: 10))
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(Color.green)
+                                .cornerRadius(4)
+                        }
+                    }
+
+                    Text(user.email)
+                        .font(.system(size: 12))
+                        .foregroundStyle(Color(red: 0.392, green: 0.455, blue: 0.549)) // #64748B
+                        .lineLimit(1)
+                }
+
+                Spacer()
+
+                // Add Friend 按钮
+                Button {
+                    Task {
+                        await appViewModel.friendshipViewModel.sendFriendRequest(to: user)
+                    }
+                } label: {
+                    Text("Add")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(
+                            RoundedRectangle(cornerRadius: 6)
+                                .fill(Color(red: 0.231, green: 0.510, blue: 0.965)) // #3B82F6
+                        )
+                }
+                .buttonStyle(.plain)
             }
-
-            Spacer()
-
-            // 根据状态显示不同按钮
-            actionButton
+            .padding(.horizontal, 12)
+            .frame(height: 60)
+            .frame(maxWidth: .infinity)
+            .background(
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(isSelected
+                        ? Color(red: 0.937, green: 0.965, blue: 1.0) // #EFF6FF
+                        : .white)
+            )
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
-        .background(Color.gray.opacity(0.05))
-        .cornerRadius(8)
+        .buttonStyle(.plain)
     }
 
-    @ViewBuilder
-    private var actionButton: some View {
-        switch user.friendshipStatus {
-        case .none:
-            Button {
-                Task {
-                    await appViewModel.friendshipViewModel.sendFriendRequest(to: user)
-                }
-            } label: {
-                Text("Add")
-                    .font(.system(size: 13, weight: .medium))
-            }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.small)
-
-        case .pendingSent:
-            Text("Request Sent")
-                .font(.system(size: 13))
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 6)
-                .background(Color.gray.opacity(0.1))
-                .cornerRadius(6)
-
-        case .accepted:
-            Button {
-                // TODO: 发起聊天
-            } label: {
-                Text("Message")
-                    .font(.system(size: 13, weight: .medium))
-            }
-            .buttonStyle(.bordered)
-            .controlSize(.small)
-
-        case .pendingReceived:
-            Text("Requested You")
-                .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(.blue)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 6)
-                .background(Color.blue.opacity(0.1))
-                .cornerRadius(6)
-
-        default:
-            EmptyView()
-        }
+    private var isSelected: Bool {
+        appViewModel.friendshipViewModel.selectedUser?.id == user.id
     }
 
     private var avatarColor: Color {
@@ -252,93 +263,153 @@ struct SearchUserDetailView: View {
     @Environment(AppViewModel.self) private var appViewModel
 
     var body: some View {
-        VStack(spacing: 24) {
-            // 头像
-            Circle()
-                .fill(avatarColor)
-                .frame(width: 100, height: 100)
-                .overlay {
-                    Text(avatarInitial)
-                        .font(.system(size: 36, weight: .semibold))
-                        .foregroundStyle(.white)
+        ScrollView {
+            VStack(spacing: 24) {
+                // 头像: 120x120, 圆角28px
+                ZStack(alignment: .bottomTrailing) {
+                    RoundedRectangle(cornerRadius: 28)
+                        .fill(avatarColor)
+                        .frame(width: 120, height: 120)
+                        .overlay {
+                            Text(avatarInitial)
+                                .font(.system(size: 42, weight: .semibold))
+                                .foregroundStyle(.white)
+                        }
+
+                    // 在线状态指示器
+                    if user.online == true {
+                        Circle()
+                            .fill(Color.white)
+                            .frame(width: 32, height: 32)
+                            .overlay {
+                                Circle()
+                                .fill(Color.green)
+                                .frame(width: 24, height: 24)
+                            }
+                            .offset(x: 4, y: 4)
+                    }
                 }
 
-            // 用户信息
-            VStack(spacing: 8) {
-                Text(user.name ?? "Unknown")
-                    .font(.system(size: 24, weight: .semibold))
+                // 用户信息
+                VStack(spacing: 8) {
+                    Text(user.name ?? "Unknown")
+                        .font(.system(size: 28, weight: .semibold))
+                        .foregroundStyle(Color(red: 0.118, green: 0.161, blue: 0.231)) // #1E293B
 
-                Text(user.email)
-                    .font(.system(size: 15))
-                    .foregroundStyle(.secondary)
-            }
+                    HStack(spacing: 6) {
+                        Text(user.email)
+                            .font(.system(size: 15))
+                            .foregroundStyle(Color(red: 0.392, green: 0.455, blue: 0.549)) // #64748B
 
-            // 操作按钮
-            switch user.friendshipStatus {
-            case .none:
+                        // 在线状态标签
+                        if user.online == true {
+                            Text("Online")
+                                .font(.system(size: 12))
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 2)
+                                .background(Color.green)
+                                .cornerRadius(4)
+                        } else {
+                            Text("Offline")
+                                .font(.system(size: 12))
+                                .foregroundStyle(.white)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 2)
+                                .background(Color.gray)
+                                .cornerRadius(4)
+                        }
+                    }
+                }
+
+                // Add Friend 按钮: 200x44, 圆角22px
                 Button {
                     Task {
                         await appViewModel.friendshipViewModel.sendFriendRequest(to: user)
                     }
                 } label: {
-                    Label("Add Friend", systemImage: "person.badge.plus")
-                        .frame(maxWidth: .infinity)
+                    HStack(spacing: 8) {
+                        Image(systemName: "person.badge.plus")
+                            .font(.system(size: 18))
+                        Text("Add Friend")
+                            .font(.system(size: 15, weight: .semibold))
+                    }
+                    .foregroundStyle(.white)
+                    .frame(width: 200, height: 44)
+                    .background(
+                        RoundedRectangle(cornerRadius: 22)
+                            .fill(Color(red: 0.231, green: 0.510, blue: 0.965)) // #3B82F6
+                    )
                 }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
-                .frame(maxWidth: 200)
+                .buttonStyle(.plain)
 
-            case .pendingSent:
-                HStack(spacing: 8) {
-                    Image(systemName: "hourglass")
-                    Text("Friend Request Sent")
-                }
-                .font(.system(size: 15))
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 20)
-                .padding(.vertical, 12)
-                .background(Color.gray.opacity(0.1))
-                .cornerRadius(8)
+                // 分隔线
+                Rectangle()
+                    .fill(Color(red: 0.886, green: 0.910, blue: 0.941)) // #E2E8F0
+                    .frame(height: 1)
+                    .frame(maxWidth: .infinity)
 
-            case .accepted:
-                Button {
-                    // TODO: 发起聊天
-                } label: {
-                    Label("Send Message", systemImage: "message")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
-                .frame(maxWidth: 200)
+                // 统计行
+                HStack(spacing: 60) {
+                    // Member Since
+                    VStack(spacing: 4) {
+                        Text("Mar 2026")
+                            .font(.system(size: 18, weight: .semibold))
+                            .foregroundStyle(Color(red: 0.118, green: 0.161, blue: 0.231))
 
-            case .pendingReceived:
-                VStack(spacing: 12) {
-                    Text("This user sent you a friend request")
-                        .font(.system(size: 14))
-                        .foregroundStyle(.secondary)
+                        Text("Member Since")
+                            .font(.system(size: 12))
+                            .foregroundStyle(Color(red: 0.392, green: 0.455, blue: 0.549))
+                    }
 
-                    HStack(spacing: 12) {
-                        Button("Accept") {
-                            // TODO: 接受请求
-                        }
-                        .buttonStyle(.borderedProminent)
+                    // Mutual Friends
+                    VStack(spacing: 4) {
+                        Text("5")
+                            .font(.system(size: 18, weight: .semibold))
+                            .foregroundStyle(Color(red: 0.118, green: 0.161, blue: 0.231))
 
-                        Button("Decline") {
-                            // TODO: 拒绝请求
-                        }
-                        .buttonStyle(.bordered)
+                        Text("Mutual Friends")
+                            .font(.system(size: 12))
+                            .foregroundStyle(Color(red: 0.392, green: 0.455, blue: 0.549))
+                    }
+
+                    // Status
+                    VStack(spacing: 4) {
+                        Text(user.online == true ? "Online" : "Offline")
+                            .font(.system(size: 18, weight: .semibold))
+                            .foregroundStyle(user.online == true ? Color.green : Color.gray)
+
+                        Text("Status")
+                            .font(.system(size: 12))
+                            .foregroundStyle(Color(red: 0.392, green: 0.455, blue: 0.549))
                     }
                 }
 
-            default:
-                EmptyView()
-            }
+                // 分隔线
+                Rectangle()
+                    .fill(Color(red: 0.886, green: 0.910, blue: 0.941)) // #E2E8F0
+                    .frame(height: 1)
+                    .frame(maxWidth: .infinity)
 
-            Spacer()
+                // About 标题
+                HStack {
+                    Text("About")
+                        .font(.system(size: 20, weight: .semibold))
+                        .foregroundStyle(Color(red: 0.118, green: 0.161, blue: 0.231))
+
+                    Spacer()
+                }
+
+                // Bio 文字
+                Text(user.name ?? "This user hasn't added a bio yet.")
+                    .font(.system(size: 15))
+                    .foregroundStyle(Color(red: 0.278, green: 0.337, blue: 0.412)) // #475569
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .padding(60)
         }
-        .padding(40)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color(nsColor: .windowBackgroundColor))
+        .background(.white)
     }
 
     private var avatarColor: Color {

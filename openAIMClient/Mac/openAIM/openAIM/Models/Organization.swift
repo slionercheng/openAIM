@@ -12,24 +12,9 @@ struct Organization: Codable, Identifiable, Hashable {
     let id: String
     let name: String
     let description: String?
-    let avatar: String?
     let type: OrganizationType
-    let ownerId: String
     var memberCount: Int?
-    let createdAt: Date
-    let updatedAt: Date
-    
-    enum CodingKeys: String, CodingKey {
-        case id
-        case name
-        case description
-        case avatar
-        case type
-        case ownerId = "owner_id"
-        case memberCount = "member_count"
-        case createdAt = "created_at"
-        case updatedAt = "updated_at"
-    }
+    // 注意：不定义 CodingKeys，让 convertFromSnakeCase 自动处理
 }
 
 /// 组织类型
@@ -48,16 +33,6 @@ struct OrgMembership: Codable, Identifiable, Hashable {
     var userName: String?
     var userEmail: String?
     let joinedAt: Date
-    
-    enum CodingKeys: String, CodingKey {
-        case id
-        case organizationId = "organization_id"
-        case userId = "user_id"
-        case role
-        case userName = "user_name"
-        case userEmail = "user_email"
-        case joinedAt = "joined_at"
-    }
 }
 
 /// 成员角色

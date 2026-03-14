@@ -30,24 +30,13 @@ struct Friendship: Codable, Identifiable, Hashable {
     let id: String
     let requesterId: String?
     let addresseeId: String?
-    let status: FriendshipStatus
+    let status: FriendshipStatus?
     let createdAt: Date
     let updatedAt: Date?
 
     // 关联用户信息
     var user: User?
     var requester: User?
-
-    enum CodingKeys: String, CodingKey {
-        case id
-        case requesterId = "requester_id"
-        case addresseeId = "addressee_id"
-        case status
-        case createdAt = "created_at"
-        case updatedAt = "updated_at"
-        case user
-        case requester
-    }
 }
 
 /// 搜索用户结果
@@ -57,12 +46,8 @@ struct SearchUser: Codable, Identifiable, Hashable {
     let name: String?
     let avatar: String?
     let status: String?
+    let online: Bool?
     var friendshipStatus: FriendshipStatusView?
-
-    enum CodingKeys: String, CodingKey {
-        case id, email, name, avatar, status
-        case friendshipStatus = "friendship_status"
-    }
 }
 
 /// 搜索用户响应
@@ -71,12 +56,6 @@ struct SearchUsersResponse: Codable {
     let page: Int
     let pageSize: Int
     let items: [SearchUser]
-
-    enum CodingKeys: String, CodingKey {
-        case total, page
-        case pageSize = "page_size"
-        case items
-    }
 }
 
 /// 好友列表响应
@@ -85,21 +64,11 @@ struct FriendsListResponse: Codable {
     let page: Int
     let pageSize: Int
     let items: [Friendship]
-
-    enum CodingKeys: String, CodingKey {
-        case total, page
-        case pageSize = "page_size"
-        case items
-    }
 }
 
 /// 发送好友请求
 struct SendFriendRequest: Codable {
     let userId: String
-
-    enum CodingKeys: String, CodingKey {
-        case userId = "user_id"
-    }
 }
 
 /// 好友请求数量响应

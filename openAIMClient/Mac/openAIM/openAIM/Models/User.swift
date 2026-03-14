@@ -14,6 +14,7 @@ struct User: Codable, Identifiable, Hashable {
     let name: String?
     let avatar: String?
     var status: UserStatus?
+    var online: Bool?
     var createdAt: Date?
     var updatedAt: Date?
 }

@@ -51,6 +51,10 @@ func main() {
 	r.Use(middleware.CORS())
 	r.Use(middleware.RateLimit(rdb))
 
+	// 初始化 WebSocket Hub
+	hub := ws.NewHub(db, rdb)
+	go hub.Run()
+
 	// 注册路由
 	api := r.Group("/api/v1")
 	{
@@ -70,7 +74,8 @@ func main() {
 		{
 			// 用户路由
 			userHandler := handler.NewUserHandler(db)
-			friendshipHandler := handler.NewFriendshipHandler(db)
+			userHandler.SetHub(hub)
+			friendshipHandler := handler.NewFriendshipHandler(db, hub)
 			users := protected.Group("/users")
 			{
 				users.GET("/me", userHandler.GetCurrentUser)
@@ -78,6 +83,8 @@ func main() {
 				users.GET("/me/orgs", userHandler.GetUserOrganizations)
 				users.GET("/me/agents", userHandler.GetUserAgents)
 				users.GET("/search", friendshipHandler.SearchUsers)
+				users.GET("/:id/online", userHandler.GetUserOnlineStatus)
+				users.POST("/online-status", userHandler.GetUsersOnlineStatus)
 			}
 
 			// 好友路由
@@ -143,7 +150,7 @@ func main() {
 			}
 
 			// 消息路由
-			msgHandler := handler.NewMessageHandler(db, rdb)
+			msgHandler := handler.NewMessageHandler(db, rdb, hub)
 			messages := protected.Group("/conversations/:id/messages")
 			{
 				messages.GET("", msgHandler.List)
@@ -153,8 +160,6 @@ func main() {
 	}
 
 	// WebSocket 路由
-	hub := ws.NewHub(db, rdb)
-	go hub.Run()
 	r.GET("/ws", func(c *gin.Context) {
 		ws.ServeWebSocket(hub, c, cfg.JWT)
 	})

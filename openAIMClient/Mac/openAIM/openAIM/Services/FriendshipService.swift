@@ -39,10 +39,12 @@ actor FriendshipService {
             URLQueryItem(name: "page", value: "\(page)"),
             URLQueryItem(name: "page_size", value: "\(pageSize)")
         ]
+        print("[DEBUG] Getting friends from: \(Constants.Friends.base)")
         let response: FriendsListResponse = try await apiClient.get(
             Constants.Friends.base,
             queryItems: queryItems
         )
+        print("[DEBUG] Friends API response - total: \(response.total), items count: \(response.items.count)")
         return response
     }
 
@@ -54,10 +56,12 @@ actor FriendshipService {
             URLQueryItem(name: "status", value: status.rawValue),
             URLQueryItem(name: "page", value: "\(page)")
         ]
+        print("[DEBUG] Getting friend requests from: \(Constants.Friends.requests)")
         let response: FriendsListResponse = try await apiClient.get(
             Constants.Friends.requests,
             queryItems: queryItems
         )
+        print("[DEBUG] Friend requests API response - total: \(response.total), items count: \(response.items.count)")
         return response
     }
 
@@ -91,4 +95,30 @@ actor FriendshipService {
     func deleteFriend(id: String) async throws {
         try await apiClient.delete(Constants.Friends.delete(id))
     }
+
+    // MARK: - 在线状态
+
+    /// 获取单个用户在线状态
+    func getUserOnlineStatus(userId: String) async throws -> Bool {
+        let response: OnlineStatusResponse = try await apiClient.get(Constants.Users.userOnline(userId))
+        return response.online
+    }
+
+    /// 批量获取用户在线状态
+    func getUsersOnlineStatus(userIds: [String]) async throws -> [String: Bool] {
+        let request = OnlineStatusRequest(userIds: userIds)
+        let response: [String: Bool] = try await apiClient.post(Constants.Users.onlineStatus, body: request)
+        return response
+    }
+}
+
+/// 在线状态请求
+struct OnlineStatusRequest: Codable {
+    let userIds: [String]
+}
+
+/// 在线状态响应
+struct OnlineStatusResponse: Codable {
+    let userId: String
+    let online: Bool
 }
