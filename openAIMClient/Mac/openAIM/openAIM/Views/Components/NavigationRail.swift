@@ -44,6 +44,7 @@ struct NavigationRail: View {
             navButton(
                 icon: "person.2.fill",
                 isActive: appViewModel.currentView == .contacts,
+                badge: appViewModel.friendshipViewModel.totalPendingCount,
                 action: { appViewModel.currentView = .contacts }
             )
 
@@ -199,15 +200,37 @@ struct UserMenuView: View {
                             appViewModel.currentView = .main
                         }
                     )
+                    // 清除所有未读按钮
+                    Button {
+                        appViewModel.conversationViewModel.clearAllUnreadCounts()
+                        showUserMenu = false
+                    } label: {
+                        HStack(spacing: 12) {
+                            Image(systemName: "checkmark.circle.fill")
+                                .font(.system(size: 14))
+                                .foregroundStyle(Color.green)
+                                .frame(width: 20)
+
+                            Text("Mark all as read")
+                                .font(.system(size: 13))
+                                .foregroundStyle(Color(red: 0.118, green: 0.161, blue: 0.231))
+
+                            Spacer()
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 8)
+                    }
+                    .buttonStyle(.plain)
+                    .background(Color.white)
                     Divider().padding(.leading, 44)
                 }
 
                 // 好友请求
-                if appViewModel.friendshipViewModel.pendingRequestsCount > 0 {
+                if appViewModel.friendshipViewModel.totalPendingCount > 0 {
                     menuButton(
                         icon: "person.badge.plus",
                         title: "Friend Requests",
-                        badge: appViewModel.friendshipViewModel.pendingRequestsCount,
+                        badge: appViewModel.friendshipViewModel.totalPendingCount,
                         action: {
                             showUserMenu = false
                             appViewModel.currentView = .contacts

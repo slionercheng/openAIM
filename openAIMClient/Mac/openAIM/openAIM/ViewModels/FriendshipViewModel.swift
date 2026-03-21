@@ -16,12 +16,14 @@ class FriendshipViewModel {
 
     var friends: [Friendship] = []
     var friendRequests: [Friendship] = []
+    var groupInvitations: [GroupInvitation] = []  // 群聊邀请
     var historyRequests: [Friendship] = []  // 历史请求（已接受/已拒绝）
     var searchResults: [SearchUser] = []
     var pendingRequestsCount: Int = 0
 
     var selectedFriend: Friendship?
     var selectedUser: SearchUser?
+    var selectedGroupInvitation: GroupInvitation?  // 选中的群聊邀请
 
     var isLoading = false
     var isLoadingHistory = false  // 加载历史请求的状态
@@ -41,6 +43,10 @@ class FriendshipViewModel {
     // MARK: - Private
 
     private let service = FriendshipService.shared
+    private let conversationService = ConversationService.shared
+
+    // MARK: - 引用 ConversationViewModel（用于刷新会话列表）
+    weak var conversationViewModel: ConversationViewModel?
 
     // MARK: - 清除数据
 
@@ -48,11 +54,13 @@ class FriendshipViewModel {
     func clearData() {
         friends = []
         friendRequests = []
+        groupInvitations = []
         historyRequests = []
         searchResults = []
         pendingRequestsCount = 0
         selectedFriend = nil
         selectedUser = nil
+        selectedGroupInvitation = nil
         errorMessage = nil
         onlineStatus = [:]
         clearSearch()
@@ -224,11 +232,19 @@ class FriendshipViewModel {
     func selectFriend(_ friend: Friendship) {
         selectedFriend = friend
         selectedUser = nil
+        selectedGroupInvitation = nil
     }
 
     func selectUser(_ user: SearchUser) {
         selectedUser = user
         selectedFriend = nil
+        selectedGroupInvitation = nil
+    }
+
+    func selectGroupInvitation(_ invitation: GroupInvitation) {
+        selectedGroupInvitation = invitation
+        selectedFriend = nil
+        selectedUser = nil
     }
 
     // MARK: - 刷新所有数据
@@ -237,10 +253,90 @@ class FriendshipViewModel {
         async let friends = loadFriends()
         async let requests = loadFriendRequests()
         async let count = loadPendingRequestsCount()
+        async let invitations = loadGroupInvitations()
 
         _ = await friends
         _ = await requests
         _ = await count
+        _ = await invitations
+    }
+
+    // MARK: - 群聊邀请
+
+    /// 加载群聊邀请列表
+    func loadGroupInvitations() async {
+        do {
+            groupInvitations = try await conversationService.getMyInvitations()
+            print("[DEBUG] Loaded \(groupInvitations.count) group invitations")
+        } catch {
+            print("[DEBUG] Failed to load group invitations: \(error)")
+        }
+    }
+
+    /// 处理新的群聊邀请（从 WebSocket 接收）
+    func handleNewGroupInvitation(_ invitation: GroupInvitation) {
+        // 检查是否已存在
+        if !groupInvitations.contains(where: { $0.id == invitation.id }) {
+            groupInvitations.insert(invitation, at: 0)
+            print("[DEBUG] Added new group invitation: \(invitation.id)")
+        }
+    }
+
+    /// 接受群聊邀请
+    func acceptGroupInvitation(_ invitation: GroupInvitation) async {
+        do {
+            _ = try await conversationService.handleMyInvitation(invitationId: invitation.id, action: "accept")
+            // 从列表移除
+            groupInvitations.removeAll { $0.id == invitation.id }
+            print("[DEBUG] Accepted group invitation: \(invitation.id)")
+            // 刷新会话列表
+            await conversationViewModel?.loadConversations()
+        } catch {
+            errorMessage = error.localizedDescription
+            print("[DEBUG] Failed to accept group invitation: \(error)")
+        }
+    }
+
+    /// 拒绝群聊邀请
+    func rejectGroupInvitation(_ invitation: GroupInvitation) async {
+        do {
+            _ = try await conversationService.handleMyInvitation(invitationId: invitation.id, action: "reject")
+            // 从列表移除
+            groupInvitations.removeAll { $0.id == invitation.id }
+            if selectedGroupInvitation?.id == invitation.id {
+                selectedGroupInvitation = nil
+            }
+            print("[DEBUG] Rejected group invitation: \(invitation.id)")
+        } catch {
+            errorMessage = error.localizedDescription
+            print("[DEBUG] Failed to reject group invitation: \(error)")
+        }
+    }
+
+    /// 忽略/取消群聊邀请
+    func ignoreGroupInvitation(_ invitation: GroupInvitation) {
+        // 从本地列表移除
+        groupInvitations.removeAll { $0.id == invitation.id }
+        if selectedGroupInvitation?.id == invitation.id {
+            selectedGroupInvitation = nil
+        }
+        print("[DEBUG] Ignored group invitation: \(invitation.id)")
+
+        // 如果是等待审批的邀请，调用 API 取消
+        Task {
+            do {
+                _ = try await conversationService.handleMyInvitation(invitationId: invitation.id, action: "reject")
+                print("[DEBUG] Rejected invitation on server: \(invitation.id)")
+            } catch {
+                print("[DEBUG] Failed to reject invitation on server: \(error)")
+            }
+        }
+    }
+
+    /// 总请求数（好友请求 + 群聊邀请）
+    var totalPendingCount: Int {
+        let pendingGroupInvitations = groupInvitations.filter { $0.status == .pending || $0.status == .pendingApproval }.count
+        return pendingRequestsCount + pendingGroupInvitations
     }
 
     // MARK: - 在线状态

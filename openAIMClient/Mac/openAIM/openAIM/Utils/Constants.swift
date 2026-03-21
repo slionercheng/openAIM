@@ -47,9 +47,16 @@ struct Constants {
     
     struct Conversations {
         static let base = "/conversations"
+        static let search = "/conversations/search"
+        static let myInvitations = "/conversations/invitations"  // 用户收到的群邀请
         static func detail(_ id: String) -> String { "/conversations/\(id)" }
         static func messages(_ id: String) -> String { "/conversations/\(id)/messages" }
         static func participants(_ id: String) -> String { "/conversations/\(id)/participants" }
+        static func settings(_ id: String) -> String { "/conversations/\(id)/settings" }
+        static func joinRequests(_ id: String) -> String { "/conversations/\(id)/join-requests" }
+        static func invite(_ id: String) -> String { "/conversations/\(id)/invite" }
+        static func invitations(_ id: String) -> String { "/conversations/\(id)/invitations" }
+        static func handleInvitation(_ id: String, action: String) -> String { "/conversations/invitations/\(id)/\(action)" }
     }
     
     struct JoinRequests {

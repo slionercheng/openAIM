@@ -24,6 +24,7 @@ struct Message: Codable, Identifiable, Hashable {
 enum SenderType: String, Codable {
     case user = "user"
     case agent = "agent"
+    case system = "system"
 }
 
 /// 内容类型
@@ -31,6 +32,29 @@ enum ContentType: String, Codable {
     case text = "text"
     case markdown = "markdown"
     case json = "json"
+    case system = "system"
+    case inviteRequest = "invite_request"
+}
+
+/// 邀请请求元数据
+struct InviteRequestMetadata: Codable {
+    let invitationId: String
+    let inviterId: String
+    let inviterName: String
+    let inviteeId: String
+    let inviteeName: String
+    let status: String  // pending, approved, rejected
+    let approvedBy: String?
+
+    enum CodingKeys: String, CodingKey {
+        case invitationId = "invitation_id"
+        case inviterId = "inviter_id"
+        case inviterName = "inviter_name"
+        case inviteeId = "invitee_id"
+        case inviteeName = "invitee_name"
+        case status
+        case approvedBy = "approved_by"
+    }
 }
 
 /// 发送消息请求

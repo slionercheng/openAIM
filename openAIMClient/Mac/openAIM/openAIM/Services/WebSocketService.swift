@@ -21,6 +21,12 @@ enum WSMessageType: String, Codable {
     case alreadyOnline = "already_online"
     case forceLogin = "force_login"
     case loginSuccess = "login_success"
+    case memberLeft = "member_left"
+    case memberJoined = "member_joined"
+    case groupInvitation = "group_invitation"
+    case groupJoined = "group_joined"
+    case groupInvitationApproved = "group_invitation_approved"
+    case groupDissolved = "group_dissolved"
 }
 
 /// WebSocket 接收到的消息（服务端格式）
@@ -35,6 +41,23 @@ struct WSReceivedMessage: Codable {
     let content: String?
     let contentType: String?
     let createdAtString: String?
+    // 群邀请相关字段
+    let conversationName: String?
+    let inviterId: String?
+    let inviterName: String?
+    let inviteeId: String?
+    let status: String?
+    let invitationId: String?  // 邀请ID
+    let approvedBy: String?  // 审批人
+    // 新成员加入相关字段
+    let userId: String?
+    let userName: String?
+    let userAvatar: String?
+    // 新群主字段（群主转让时）
+    let newOwnerId: String?
+    let newOwnerName: String?
+    // 系统消息字段
+    let systemMessage: SystemMessageData?
 
     enum CodingKeys: String, CodingKey {
         case type
@@ -47,6 +70,45 @@ struct WSReceivedMessage: Codable {
         case content
         case contentType = "content_type"
         case createdAtString = "created_at"
+        case conversationName = "conversation_name"
+        case inviterId = "inviter_id"
+        case inviterName = "inviter_name"
+        case inviteeId = "invitee_id"
+        case status
+        case invitationId = "invitation_id"
+        case approvedBy = "approved_by"
+        case userId = "user_id"
+        case userName = "user_name"
+        case userAvatar = "user_avatar"
+        case newOwnerId = "new_owner_id"
+        case newOwnerName = "new_owner_name"
+        case systemMessage = "system_message"
+    }
+
+    /// 系统消息数据
+    struct SystemMessageData: Codable {
+        let id: String
+        let content: String
+        let createdAtString: String?
+
+        enum CodingKeys: String, CodingKey {
+            case id
+            case content
+            case createdAtString = "created_at"
+        }
+
+        var createdAt: Date {
+            if let dateString = createdAtString {
+                return Self.parseDate(dateString) ?? Date()
+            }
+            return Date()
+        }
+
+        private static func parseDate(_ dateString: String) -> Date? {
+            let formatter = ISO8601DateFormatter()
+            formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            return formatter.date(from: dateString)
+        }
     }
 
     /// 解析日期
@@ -145,6 +207,13 @@ class WebSocketService: NSObject {
     var onTyping: ((String, Bool) -> Void)?
     var onKicked: (() -> Void)?  // 被踢下线回调
     var onAlreadyOnline: (() -> Void)?  // 检测到已有在线设备，需要确认
+    var onMemberLeft: ((String, String, String, (id: String, content: String, createdAt: Date)?, String?, String?) -> Void)?  // conversationId, userId, userName, systemMessage, newOwnerId, newOwnerName 成员离开回调
+    var onMemberJoined: ((String, String, String, (id: String, content: String, createdAt: Date)?) -> Void)?  // conversationId, userId, userName, systemMessage 成员加入回调
+    var onGroupInvitation: ((GroupInvitation) -> Void)?  // 收到群邀请
+    var onGroupJoined: ((String, String) -> Void)?  // conversationId, conversationName 被管理员邀请直接加入
+    var onGroupInvitationApproved: ((String, String) -> Void)?  // invitationId, conversationId 邀请被批准
+    var onGroupDissolved: ((String, String) -> Void)?  // conversationId, conversationName 群聊解散
+    var onInviteRequestUpdated: ((String, String, String, String?) -> Void)?  // conversationId, invitationId, status, approvedBy 邀请请求状态更新
 
     // 存储当前 token 用于强制登录
     private var currentToken: String?
@@ -335,6 +404,90 @@ class WebSocketService: NSObject {
                     }
                 } else {
                     logWarn("WebSocket", "toMessage() returned nil")
+                }
+            } else if wsMessage.type == "member_left" {
+                // 成员离开事件
+                if let conversationId = wsMessage.conversationId,
+                   let userId = wsMessage.senderId,
+                   let userName = wsMessage.senderName ?? wsMessage.content {
+                    logInfo("WebSocket", "Member left: \(userName) from conversation \(conversationId)")
+                    // 提取系统消息数据
+                    var sysMsg: (id: String, content: String, createdAt: Date)? = nil
+                    if let systemMessage = wsMessage.systemMessage {
+                        sysMsg = (id: systemMessage.id, content: systemMessage.content, createdAt: systemMessage.createdAt)
+                    }
+                    Task { @MainActor in
+                        self.onMemberLeft?(conversationId, userId, userName, sysMsg, wsMessage.newOwnerId, wsMessage.newOwnerName)
+                    }
+                }
+            } else if wsMessage.type == "member_joined" {
+                // 新成员加入事件
+                if let conversationId = wsMessage.conversationId,
+                   let userId = wsMessage.userId,
+                   let userName = wsMessage.userName {
+                    logInfo("WebSocket", "Member joined: \(userName) to conversation \(conversationId)")
+                    // 提取系统消息数据
+                    var sysMsg: (id: String, content: String, createdAt: Date)? = nil
+                    if let systemMessage = wsMessage.systemMessage {
+                        sysMsg = (id: systemMessage.id, content: systemMessage.content, createdAt: systemMessage.createdAt)
+                    }
+                    Task { @MainActor in
+                        self.onMemberJoined?(conversationId, userId, userName, sysMsg)
+                    }
+                }
+            } else if wsMessage.type == "group_invitation" {
+                // 收到群邀请（等待管理员审批）
+                let invitation = GroupInvitation(
+                    id: wsMessage.id ?? "",
+                    conversationId: wsMessage.conversationId,
+                    conversationName: wsMessage.conversationName ?? wsMessage.content,
+                    inviterId: wsMessage.inviterId ?? wsMessage.senderId,
+                    inviteeId: wsMessage.inviteeId,
+                    status: InvitationStatus(rawValue: wsMessage.status ?? "pending") ?? .pending,
+                    createdAt: Date(),
+                    inviter: nil,
+                    invitee: nil
+                )
+                logInfo("WebSocket", "Received group invitation: \(invitation.id) for conversation: \(invitation.conversationName ?? "unknown")")
+                Task { @MainActor in
+                    self.onGroupInvitation?(invitation)
+                }
+            } else if wsMessage.type == "group_joined" {
+                // 被管理员邀请直接加入群聊
+                if let conversationId = wsMessage.conversationId,
+                   let conversationName = wsMessage.conversationName ?? wsMessage.senderName ?? wsMessage.content {
+                    logInfo("WebSocket", "Joined group: \(conversationName)")
+                    Task { @MainActor in
+                        self.onGroupJoined?(conversationId, conversationName)
+                    }
+                }
+            } else if wsMessage.type == "group_invitation_approved" {
+                // 群邀请被管理员批准
+                if let conversationId = wsMessage.conversationId,
+                   let invitationId = wsMessage.id {
+                    logInfo("WebSocket", "Group invitation approved: \(invitationId)")
+                    Task { @MainActor in
+                        self.onGroupInvitationApproved?(invitationId, conversationId)
+                    }
+                }
+            } else if wsMessage.type == "group_dissolved" {
+                // 群聊解散
+                if let conversationId = wsMessage.conversationId {
+                    let conversationName = wsMessage.conversationName ?? "群聊"
+                    logInfo("WebSocket", "Group dissolved: \(conversationName)")
+                    Task { @MainActor in
+                        self.onGroupDissolved?(conversationId, conversationName)
+                    }
+                }
+            } else if wsMessage.type == "invite_request_updated" {
+                // 邀请请求状态更新（审批后）
+                if let conversationId = wsMessage.conversationId,
+                   let invitationId = wsMessage.invitationId,
+                   let status = wsMessage.status {
+                    logInfo("WebSocket", "Invite request updated: \(invitationId) status: \(status)")
+                    Task { @MainActor in
+                        self.onInviteRequestUpdated?(conversationId, invitationId, status, wsMessage.approvedBy)
+                    }
                 }
             } else if wsMessage.type == "pong" {
                 logDebug("WebSocket", "received pong")

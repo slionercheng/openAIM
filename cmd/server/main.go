@@ -137,16 +137,30 @@ func main() {
 			}
 
 			// 会话路由
-			convHandler := handler.NewConversationHandler(db)
+			convHandler := handler.NewConversationHandler(db, hub)
 			conversations := protected.Group("/conversations")
 			{
 				conversations.POST("", convHandler.Create)
 				conversations.GET("", convHandler.List)
+				conversations.GET("/search", convHandler.SearchGroups) // 搜索公开群聊
+				conversations.GET("/invitations", convHandler.GetUserInvitations) // 获取用户收到的群邀请
+				conversations.POST("/invitations/:invitation_id/:action", convHandler.HandleUserInvitation) // 用户处理邀请
 				conversations.GET("/:id", convHandler.GetByID)
 				conversations.PUT("/:id", convHandler.Update)
-				conversations.DELETE("/:id", convHandler.Delete)
+				conversations.PUT("/:id/settings", convHandler.UpdateGroupSettings) // 更新群设置（公开/私有）
+				conversations.DELETE("/:id", convHandler.LeaveConversation) // 退出群聊
+				conversations.DELETE("/:id/dissolve", convHandler.DissolveGroup) // 解散群聊
 				conversations.POST("/:id/participants", convHandler.AddParticipant)
 				conversations.DELETE("/:id/participants/:pid", convHandler.RemoveParticipant)
+				conversations.PUT("/:id/participants/:pid/role", convHandler.SetParticipantRole) // 设置成员角色
+				conversations.POST("/:id/participants/:pid/mute", convHandler.MuteParticipant)   // 禁言成员
+				conversations.DELETE("/:id/participants/:pid/mute", convHandler.UnmuteParticipant) // 解除禁言
+				conversations.POST("/:id/invite", convHandler.InviteMember)                      // 邀请成员
+				conversations.GET("/:id/invitations", convHandler.GetPendingInvitations)          // 获取待审批邀请
+				conversations.POST("/:id/invitations/:invitation_id/:action", convHandler.HandleInvitation) // 审批邀请
+				conversations.POST("/:id/join-requests", convHandler.CreateJoinRequest)        // 申请加入
+				conversations.GET("/:id/join-requests", convHandler.GetJoinRequests)           // 获取申请列表
+				conversations.POST("/:id/join-requests/:request_id/:action", convHandler.HandleJoinRequest) // 处理申请
 			}
 
 			// 消息路由

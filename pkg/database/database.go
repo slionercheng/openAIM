@@ -49,6 +49,8 @@ func Migrate(db *gorm.DB) error {
 		&agent.JoinRequest{},
 		&conversation.Conversation{},
 		&conversation.Participant{},
+		&conversation.JoinRequest{},
+		&conversation.Invitation{},
 		&message.Message{},
 		&friendship.Friendship{},
 		&event.Event{},

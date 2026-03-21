@@ -107,7 +107,7 @@ actor AuthService {
     }
 
     /// 刷新 Token
-    func refreshToken() async throws -> Bool {
+    func refreshToken() async -> Bool {
         guard let refreshToken = await SessionManager.shared.refreshToken else {
             return false
         }
@@ -164,13 +164,13 @@ actor AuthService {
             return true
         } catch {
             // Token 过期，尝试刷新
-            do {
-                _ = try await refreshToken()
+            let refreshed = await refreshToken()
+            if refreshed {
                 await MainActor.run {
                     logInfo("AuthService", "Session restored with refreshed token for: \(account.email)")
                 }
                 return true
-            } catch {
+            } else {
                 await MainActor.run {
                     logWarn("AuthService", "Failed to restore session for: \(account.email)")
                     SessionManager.shared.clearSession()

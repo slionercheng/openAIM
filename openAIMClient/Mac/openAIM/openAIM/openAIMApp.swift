@@ -155,5 +155,15 @@ struct RootView: View {
         } message: {
             Text("如果继续登录，将顶替已在线的设备。确定要继续吗？")
         }
+        .alert("群聊邀请", isPresented: Binding(
+            get: { appViewModel.showGroupInvitationAlert },
+            set: { appViewModel.showGroupInvitationAlert = $0 }
+        )) {
+            Button("确定", role: .cancel) {
+                appViewModel.showGroupInvitationAlert = false
+            }
+        } message: {
+            Text(appViewModel.groupInvitationMessage)
+        }
     }
 }

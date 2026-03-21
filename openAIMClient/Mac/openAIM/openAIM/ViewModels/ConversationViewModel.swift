@@ -34,6 +34,9 @@ class ConversationViewModel {
         // 更新最新消息
         latestMessages[message.conversationId] = message
 
+        // 判断是否是系统消息
+        let isSystemMessage = message.senderType == .system || message.contentType == .system
+
         // 如果是当前会话的消息，添加到消息列表
         if selectedConversation?.id == message.conversationId {
             logInfo("ConversationViewModel", "Match! Adding message to list")
@@ -47,8 +50,9 @@ class ConversationViewModel {
             } else {
                 logDebug("ConversationViewModel", "Message already exists, skipping")
             }
-        } else {
-            // 不是当前会话，增加未读数
+        } else if !isSystemMessage {
+            // 不是当前会话，且不是系统消息，才增加未读数
+            // 系统消息不计入未读计数（如"xxx 加入了群聊"只是通知性质）
             let currentCount = unreadCounts[message.conversationId] ?? 0
             unreadCounts[message.conversationId] = currentCount + 1
             logInfo("ConversationViewModel", "Unread count for \(message.conversationId): \(currentCount + 1)")
@@ -66,6 +70,14 @@ class ConversationViewModel {
                 existingMessages.append(message)
                 WorkspaceManager.shared.saveMessages(conversationId: message.conversationId, messages: existingMessages)
             }
+        } else {
+            // 系统消息：保存到工作区，但不增加未读计数
+            logInfo("ConversationViewModel", "System message received, not incrementing unread count")
+            var existingMessages = WorkspaceManager.shared.loadMessages(conversationId: message.conversationId)
+            if !existingMessages.contains(where: { $0.id == message.id }) {
+                existingMessages.append(message)
+                WorkspaceManager.shared.saveMessages(conversationId: message.conversationId, messages: existingMessages)
+            }
         }
 
         // 更新会话列表（移到顶部）
@@ -73,7 +85,8 @@ class ConversationViewModel {
             var conv = conversations.remove(at: index)
             // 更新会话的 lastMessage
             conv.lastMessage = message
-            if selectedConversation?.id != message.conversationId {
+            // 只有非系统消息且不是当前会话时才增加未读计数
+            if !isSystemMessage && selectedConversation?.id != message.conversationId {
                 conv.unreadCount = (conv.unreadCount ?? 0) + 1
             }
             conversations.insert(conv, at: 0)
@@ -124,6 +137,19 @@ class ConversationViewModel {
         }
         // 保存未读数到工作区
         WorkspaceManager.shared.saveUnreadCounts(unreadCounts)
+    }
+
+    /// 清除所有未读数
+    func clearAllUnreadCounts() {
+        for conversationId in unreadCounts.keys {
+            unreadCounts[conversationId] = 0
+        }
+        for i in 0..<conversations.count {
+            conversations[i].unreadCount = 0
+        }
+        // 保存未读数到工作区
+        WorkspaceManager.shared.saveUnreadCounts(unreadCounts)
+        logInfo("ConversationViewModel", "Cleared all unread counts")
     }
 
     /// 总未读数
@@ -219,26 +245,80 @@ class ConversationViewModel {
     }
     
     /// 创建会话
-    func createConversation(name: String?, type: ConversationType, orgId: String? = nil, participantIds: [String]) async {
+    func createConversation(name: String?, type: ConversationType, orgId: String? = nil, isPublic: Bool = false, participantIds: [String]) async -> Bool {
         isLoading = true
+
+        // 如果是私聊，先检查是否已存在与该用户的会话（客户端本地检查）
+        if type == .direct && participantIds.count == 1 {
+            let targetUserId = participantIds[0]
+            if let existingConv = findDirectConversation(with: targetUserId) {
+                // 已存在，直接选中该会话
+                logInfo("ConversationViewModel", "Found existing direct conversation locally with user: \(targetUserId)")
+                selectedConversation = existingConv
+                messages = []
+                await loadMessages(conversationId: existingConv.id)
+                isLoading = false
+                return false // 返回 false 表示没有创建新会话
+            }
+        }
 
         do {
             let conversation = try await service.createConversation(
                 name: name,
                 type: type,
                 orgId: orgId,
+                isPublic: isPublic,
                 participantIds: participantIds
             )
+
+            // 检查服务端是否返回了已存在的会话
+            if conversation.existing == true {
+                logInfo("ConversationViewModel", "Server returned existing conversation: \(conversation.id)")
+                // 在列表中查找并选中该会话
+                if let existingConv = conversations.first(where: { $0.id == conversation.id }) {
+                    selectedConversation = existingConv
+                } else {
+                    // 会话不在本地列表中，添加并选中
+                    conversations.insert(conversation, at: 0)
+                    selectedConversation = conversation
+                }
+                messages = []
+                await loadMessages(conversationId: conversation.id)
+                isLoading = false
+                return false // 返回 false 表示没有创建新会话
+            }
+
             conversations.insert(conversation, at: 0)
             selectedConversation = conversation
             messages = []
-            print("[DEBUG] Conversation created successfully: \(conversation.id)")
+            logInfo("ConversationViewModel", "Conversation created successfully: \(conversation.id)")
+            isLoading = false
+            return true // 返回 true 表示创建了新会话
         } catch {
-            print("[DEBUG] Failed to create conversation: \(error)")
+            logError("ConversationViewModel", "Failed to create conversation: \(error)")
             errorMessage = error.localizedDescription
+            isLoading = false
+            return false
         }
+    }
 
-        isLoading = false
+    /// 查找与指定用户的私聊会话
+    func findDirectConversation(with userId: String) -> Conversation? {
+        guard let currentUserId = SessionManager.shared.currentUserId else { return nil }
+
+        for conv in conversations {
+            if conv.type == .direct {
+                // 检查参与者是否包含该用户
+                if let participants = conv.participants {
+                    let hasTargetUser = participants.contains { $0.id == userId }
+                    let hasCurrentUser = participants.contains { $0.id == currentUserId }
+                    if hasTargetUser && hasCurrentUser && participants.count == 2 {
+                        return conv
+                    }
+                }
+            }
+        }
+        return nil
     }
     
     /// 删除会话

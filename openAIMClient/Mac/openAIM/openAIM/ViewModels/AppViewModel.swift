@@ -37,6 +37,14 @@ class AppViewModel {
     var newMessageSender = ""
     var newMessageConversationId = ""
 
+    // 群邀请通知
+    var showGroupInvitationAlert = false
+    var groupInvitationMessage = ""
+    var pendingGroupInvitation: GroupInvitation?
+
+    // 群聊解散通知
+    var dissolvedConversationIds: Set<String> = []
+
     // 预填的登录邮箱（从账号选择界面传递）
     var prefilledEmail: String = ""
 
@@ -78,6 +86,9 @@ class AppViewModel {
         organizationViewModel.clearData()
         friendshipViewModel.clearData()
 
+        // 设置 ViewModel 之间的引用
+        friendshipViewModel.conversationViewModel = conversationViewModel
+
         // 连接 WebSocket（使用 SessionManager 的 token）
         setupWebSocket()
 
@@ -117,6 +128,174 @@ class AppViewModel {
         showNewMessageAlert = true
     }
 
+    /// 处理成员离开事件
+    private func handleMemberLeft(conversationId: String, userId: String, userName: String, systemMessage: (id: String, content: String, createdAt: Date)?, newOwnerId: String?, newOwnerName: String?) {
+        logInfo("AppViewModel", "Member left: \(userName) from conversation \(conversationId)")
+
+        // 创建系统消息（优先使用服务端提供的）
+        let msg: Message
+        if let sysMsg = systemMessage {
+            msg = Message(
+                id: sysMsg.id,
+                conversationId: conversationId,
+                senderType: .system,
+                senderId: "system",
+                content: sysMsg.content,
+                contentType: .system,
+                metadata: nil,
+                createdAt: sysMsg.createdAt
+            )
+        } else {
+            var content = "\(userName) 离开了群聊"
+            if let newOwner = newOwnerName {
+                content = "\(userName) 离开了群聊，\(newOwner) 成为新群主"
+            }
+            msg = Message(
+                id: UUID().uuidString,
+                conversationId: conversationId,
+                senderType: .system,
+                senderId: "system",
+                content: content,
+                contentType: .system,
+                metadata: nil,
+                createdAt: Date()
+            )
+        }
+
+        // 添加系统消息到消息列表
+        conversationViewModel.handleNewMessage(msg)
+
+        // 刷新会话列表以更新参与者，并更新 selectedConversation
+        Task {
+            await conversationViewModel.loadConversations()
+            // 如果当前正在查看这个会话，更新 selectedConversation
+            if conversationViewModel.selectedConversation?.id == conversationId {
+                if let updatedConv = conversationViewModel.conversations.first(where: { $0.id == conversationId }) {
+                    conversationViewModel.selectedConversation = updatedConv
+                }
+            }
+        }
+    }
+
+    /// 处理新成员加入事件
+    private func handleMemberJoined(conversationId: String, userId: String, userName: String, systemMessage: (id: String, content: String, createdAt: Date)?) {
+        logInfo("AppViewModel", "Member joined: \(userName) to conversation \(conversationId)")
+
+        // 创建系统消息（优先使用服务端提供的）
+        let msg: Message
+        if let sysMsg = systemMessage {
+            msg = Message(
+                id: sysMsg.id,
+                conversationId: conversationId,
+                senderType: .system,
+                senderId: "system",
+                content: sysMsg.content,
+                contentType: .system,
+                metadata: nil,
+                createdAt: sysMsg.createdAt
+            )
+        } else {
+            msg = Message(
+                id: UUID().uuidString,
+                conversationId: conversationId,
+                senderType: .system,
+                senderId: "system",
+                content: "\(userName) 加入了群聊",
+                contentType: .system,
+                metadata: nil,
+                createdAt: Date()
+            )
+        }
+
+        // 添加系统消息到消息列表
+        conversationViewModel.handleNewMessage(msg)
+
+        // 刷新会话列表以更新参与者，并更新 selectedConversation
+        Task {
+            await conversationViewModel.loadConversations()
+            // 如果当前正在查看这个会话，更新 selectedConversation
+            if conversationViewModel.selectedConversation?.id == conversationId {
+                if let updatedConv = conversationViewModel.conversations.first(where: { $0.id == conversationId }) {
+                    conversationViewModel.selectedConversation = updatedConv
+                }
+            }
+        }
+    }
+
+    /// 处理收到群邀请（等待管理员审批）
+    private func handleGroupInvitation(_ invitation: GroupInvitation) {
+        logInfo("AppViewModel", "Received group invitation: \(invitation.id)")
+        // 添加到群邀请列表
+        friendshipViewModel.handleNewGroupInvitation(invitation)
+    }
+
+    /// 处理被管理员邀请直接加入群聊
+    private func handleGroupJoined(conversationId: String, conversationName: String) {
+        logInfo("AppViewModel", "Joined group: \(conversationName)")
+        // 不显示弹窗，直接刷新会话列表，新群聊会出现在列表顶部
+        Task {
+            await conversationViewModel.loadConversations()
+        }
+    }
+
+    /// 处理群邀请被批准
+    private func handleGroupInvitationApproved(invitationId: String, conversationId: String) {
+        logInfo("AppViewModel", "Group invitation approved: \(invitationId)")
+        // 不显示弹窗，直接刷新会话列表
+        Task {
+            await conversationViewModel.loadConversations()
+        }
+    }
+
+    /// 处理群聊解散
+    private func handleGroupDissolved(conversationId: String, conversationName: String) {
+        logInfo("AppViewModel", "Group dissolved: \(conversationName)")
+
+        // 标记群聊为已解散
+        dissolvedConversationIds.insert(conversationId)
+
+        // 如果当前正在查看这个群聊，清除选中状态
+        if conversationViewModel.selectedConversation?.id == conversationId {
+            conversationViewModel.selectedConversation = nil
+        }
+
+        // 从会话列表中移除该群聊
+        conversationViewModel.conversations.removeAll { $0.id == conversationId }
+    }
+
+    /// 处理邀请请求状态更新
+    private func handleInviteRequestUpdated(conversationId: String, invitationId: String, status: String, approvedBy: String?) {
+        logInfo("AppViewModel", "Invite request updated: \(invitationId) status: \(status)")
+
+        // 更新消息列表中对应消息的元数据
+        for i in 0..<conversationViewModel.messages.count {
+            let msg = conversationViewModel.messages[i]
+            if msg.contentType == .inviteRequest, let metadata = msg.metadata,
+               metadata["invitation_id"] == invitationId {
+                // 更新元数据
+                var updatedMetadata = metadata
+                updatedMetadata["status"] = status
+                if let approvedBy = approvedBy {
+                    updatedMetadata["approved_by"] = approvedBy
+                }
+
+                // 创建更新后的消息
+                let updatedMessage = Message(
+                    id: msg.id,
+                    conversationId: msg.conversationId,
+                    senderType: msg.senderType,
+                    senderId: msg.senderId,
+                    content: msg.content,
+                    contentType: msg.contentType,
+                    metadata: updatedMetadata,
+                    createdAt: msg.createdAt
+                )
+                conversationViewModel.messages[i] = updatedMessage
+                break
+            }
+        }
+    }
+
     /// 打开新消息所在的会话
     func openNewMessageConversation() {
         showNewMessageAlert = false
@@ -144,6 +323,41 @@ class AppViewModel {
         // 设置 WebSocket 消息回调
         WebSocketService.shared.onMessageReceived = { [weak self] message in
             self?.conversationViewModel.handleNewMessage(message)
+        }
+
+        // 设置成员离开回调
+        WebSocketService.shared.onMemberLeft = { [weak self] conversationId, userId, userName, systemMessage, newOwnerId, newOwnerName in
+            self?.handleMemberLeft(conversationId: conversationId, userId: userId, userName: userName, systemMessage: systemMessage, newOwnerId: newOwnerId, newOwnerName: newOwnerName)
+        }
+
+        // 设置新成员加入回调
+        WebSocketService.shared.onMemberJoined = { [weak self] conversationId, userId, userName, systemMessage in
+            self?.handleMemberJoined(conversationId: conversationId, userId: userId, userName: userName, systemMessage: systemMessage)
+        }
+
+        // 设置群邀请回调
+        WebSocketService.shared.onGroupInvitation = { [weak self] invitation in
+            self?.handleGroupInvitation(invitation)
+        }
+
+        // 设置被管理员邀请直接加入群聊回调
+        WebSocketService.shared.onGroupJoined = { [weak self] conversationId, conversationName in
+            self?.handleGroupJoined(conversationId: conversationId, conversationName: conversationName)
+        }
+
+        // 设置群邀请被批准回调
+        WebSocketService.shared.onGroupInvitationApproved = { [weak self] invitationId, conversationId in
+            self?.handleGroupInvitationApproved(invitationId: invitationId, conversationId: conversationId)
+        }
+
+        // 设置群聊解散回调
+        WebSocketService.shared.onGroupDissolved = { [weak self] conversationId, conversationName in
+            self?.handleGroupDissolved(conversationId: conversationId, conversationName: conversationName)
+        }
+
+        // 设置邀请请求状态更新回调
+        WebSocketService.shared.onInviteRequestUpdated = { [weak self] conversationId, invitationId, status, approvedBy in
+            self?.handleInviteRequestUpdated(conversationId: conversationId, invitationId: invitationId, status: status, approvedBy: approvedBy)
         }
 
         // 设置被踢下线回调
@@ -213,6 +427,9 @@ class AppViewModel {
 
     /// 强制登录成功后加载数据
     private func loadInitialDataAfterForceLogin() async {
+        // 设置 ViewModel 之间的引用
+        friendshipViewModel.conversationViewModel = conversationViewModel
+
         async let conversations = conversationViewModel.loadConversations()
         async let agents = agentViewModel.loadAgents()
         async let organizations = organizationViewModel.loadOrganizations()

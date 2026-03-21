@@ -32,6 +32,8 @@ struct ContactsView: View {
                 FriendDetailView(friend: friend)
             } else if let user = appViewModel.friendshipViewModel.selectedUser {
                 SearchUserDetailView(user: user)
+            } else if let invitation = appViewModel.friendshipViewModel.selectedGroupInvitation {
+                GroupInvitationDetailView(invitation: invitation)
             } else {
                 emptyView
             }
@@ -210,8 +212,8 @@ struct ContactsView: View {
                                     ? Color(red: 0.231, green: 0.510, blue: 0.965) // #3B82F6
                                     : Color(red: 0.392, green: 0.455, blue: 0.549)) // #64748B
 
-                            if appViewModel.friendshipViewModel.pendingRequestsCount > 0 {
-                                Text("\(appViewModel.friendshipViewModel.pendingRequestsCount)")
+                            if appViewModel.friendshipViewModel.totalPendingCount > 0 {
+                                Text("\(appViewModel.friendshipViewModel.totalPendingCount)")
                                     .font(.system(size: 11, weight: .semibold))
                                     .foregroundStyle(.white)
                                     .frame(width: 18, height: 18)
@@ -476,7 +478,7 @@ struct ContactsView: View {
             if appViewModel.friendshipViewModel.isLoading {
                 ProgressView()
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if appViewModel.friendshipViewModel.friendRequests.isEmpty {
+            } else if appViewModel.friendshipViewModel.friendRequests.isEmpty && appViewModel.friendshipViewModel.groupInvitations.isEmpty {
                 VStack(spacing: 12) {
                     Image(systemName: "person.badge.clock")
                         .font(.system(size: 40))
@@ -490,20 +492,50 @@ struct ContactsView: View {
             } else {
                 ScrollView {
                     LazyVStack(spacing: 4) {
-                        ForEach(appViewModel.friendshipViewModel.friendRequests) { request in
-                            RequestRowView(
-                                request: request,
-                                onAccept: {
-                                    Task {
-                                        await appViewModel.friendshipViewModel.acceptRequest(request)
+                        // 好友请求
+                        if !appViewModel.friendshipViewModel.friendRequests.isEmpty {
+                            SectionHeader(title: "Friend Requests", count: appViewModel.friendshipViewModel.friendRequests.count)
+
+                            ForEach(appViewModel.friendshipViewModel.friendRequests) { request in
+                                RequestRowView(
+                                    request: request,
+                                    onAccept: {
+                                        Task {
+                                            await appViewModel.friendshipViewModel.acceptRequest(request)
+                                        }
+                                    },
+                                    onReject: {
+                                        Task {
+                                            await appViewModel.friendshipViewModel.rejectRequest(request)
+                                        }
                                     }
-                                },
-                                onReject: {
-                                    Task {
-                                        await appViewModel.friendshipViewModel.rejectRequest(request)
+                                )
+                            }
+                        }
+
+                        // 群聊邀请
+                        if !appViewModel.friendshipViewModel.groupInvitations.isEmpty {
+                            SectionHeader(title: "Group Invitations", count: appViewModel.friendshipViewModel.groupInvitations.count)
+
+                            ForEach(appViewModel.friendshipViewModel.groupInvitations) { invitation in
+                                GroupInvitationRowView(
+                                    invitation: invitation,
+                                    isSelected: appViewModel.friendshipViewModel.selectedGroupInvitation?.id == invitation.id,
+                                    onTap: {
+                                        appViewModel.friendshipViewModel.selectGroupInvitation(invitation)
+                                    },
+                                    onAccept: {
+                                        Task {
+                                            await appViewModel.friendshipViewModel.acceptGroupInvitation(invitation)
+                                        }
+                                    },
+                                    onReject: {
+                                        Task {
+                                            await appViewModel.friendshipViewModel.rejectGroupInvitation(invitation)
+                                        }
                                     }
-                                }
-                            )
+                                )
+                            }
                         }
                     }
                     .padding(.horizontal, 8)
@@ -722,6 +754,132 @@ struct RequestRowView: View {
             return String(email.prefix(1)).uppercased()
         }
         return "?"
+    }
+}
+
+// MARK: - Section Header
+
+struct SectionHeader: View {
+    let title: String
+    let count: Int
+
+    var body: some View {
+        HStack {
+            Text(title)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(Color(red: 0.392, green: 0.455, blue: 0.549))
+
+            Text("(\(count))")
+                .font(.system(size: 12))
+                .foregroundStyle(Color(red: 0.58, green: 0.635, blue: 0.722))
+
+            Spacer()
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+    }
+}
+
+// MARK: - Group Invitation Row View
+
+struct GroupInvitationRowView: View {
+    let invitation: GroupInvitation
+    let isSelected: Bool
+    let onTap: () -> Void
+    let onAccept: () -> Void
+    let onReject: () -> Void
+
+    var body: some View {
+        Button {
+            onTap()
+        } label: {
+            HStack(spacing: 12) {
+                // 群聊图标
+                ZStack {
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(Color(red: 0.231, green: 0.510, blue: 0.965).opacity(0.1))
+                        .frame(width: 40, height: 40)
+
+                    Image(systemName: "person.3.fill")
+                        .font(.system(size: 16))
+                        .foregroundStyle(Color(red: 0.231, green: 0.510, blue: 0.965))
+                }
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(invitation.conversationName ?? "Group Chat")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(Color(red: 0.118, green: 0.161, blue: 0.231))
+                        .lineLimit(1)
+
+                    Text(statusText)
+                        .font(.system(size: 12))
+                        .foregroundStyle(Color(red: 0.392, green: 0.455, blue: 0.549))
+                }
+
+                Spacer()
+
+                // 根据状态显示不同按钮
+                if invitation.status == .pending {
+                    // 管理员邀请，可以直接接受/拒绝
+                    HStack(spacing: 8) {
+                        Button {
+                            onAccept()
+                        } label: {
+                            Image(systemName: "checkmark")
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(.white)
+                                .frame(width: 28, height: 28)
+                                .background(
+                                    Circle()
+                                        .fill(Color(red: 0.133, green: 0.773, blue: 0.369))
+                                )
+                        }
+                        .buttonStyle(.plain)
+
+                        Button {
+                            onReject()
+                        } label: {
+                            Image(systemName: "xmark")
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(.white)
+                                .frame(width: 28, height: 28)
+                                .background(
+                                    Circle()
+                                        .fill(Color(red: 0.937, green: 0.267, blue: 0.267))
+                                )
+                        }
+                        .buttonStyle(.plain)
+                    }
+                } else if invitation.status == .pendingApproval {
+                    // 普通成员邀请，等待管理员审批
+                    Text("Waiting")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(Color(red: 0.949, green: 0.6, blue: 0.114))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(
+                            RoundedRectangle(cornerRadius: 4)
+                                .fill(Color(red: 0.949, green: 0.6, blue: 0.114).opacity(0.1))
+                        )
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(isSelected
+                        ? Color(red: 0.937, green: 0.965, blue: 1.0)
+                        : Color(red: 0.945, green: 0.961, blue: 0.969))
+            )
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var statusText: String {
+        if let inviterName = invitation.inviter?.name {
+            return "Invited by \(inviterName)"
+        }
+        return "Group invitation"
     }
 }
 
